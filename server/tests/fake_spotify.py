@@ -238,6 +238,13 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
             "devices": [{**d, "is_active": d["id"] == fake.active_device} for d in fake.devices]
         }
 
+    @app.post("/control/devices")
+    async def add_device(request: Request) -> dict[str, Any]:
+        """Make another device appear in the list, as a phone does when its app wakes up."""
+        device = await request.json()
+        fake.devices.append({"type": "Smartphone", "is_active": False, **device})
+        return {"devices": len(fake.devices)}
+
     @app.put("/v1/me/player")
     async def transfer(request: Request) -> Response:
         body = await request.json()
@@ -311,7 +318,10 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
         items: list[dict[str, Any]] = [
             {
                 "track": {"uri": "spotify:track:t0"},
-                "context": {"type": "playlist", "uri": f"spotify:playlist:{pid}"},
+                "context": {
+                    "type": "playlist",
+                    "uri": pid if pid.startswith("spotify:") else f"spotify:playlist:{pid}",
+                },
             }
             for pid in fake.recent_contexts
         ]

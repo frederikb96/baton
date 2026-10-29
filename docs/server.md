@@ -48,7 +48,9 @@ Bootstrap values only. Each is read from the environment variable `BATON_` plus 
 
 The server refuses to start when a required value is missing or invalid and says which one. Other `BATON_*` variables are ignored, so the service-link variables Kubernetes injects for a Service named `baton` (`BATON_PORT=tcp://…`, `BATON_SERVICE_HOST`, …) do not interfere; that is why the listen settings are called `BATON_LISTEN_HOST` and `BATON_LISTEN_PORT`.
 
-Everything a user changes while the server runs lives in the database and is set through the web page or the API: target playlist, default playback device, market and watch keys.
+Everything a user changes while the server runs lives in the database and is set through the web page or the API: target playlist, default playback device and watch keys.
+
+Spotify needs a market (a two-letter country code) to say which tracks are playable; the server asks for `from_token`, which Spotify resolves from the login, so nothing has to be set. To pin one anyway, change the stored setting through the API while signed in to the page, for example `PUT /api/ui/settings` with `{"market": "DE"}` (`null` goes back to the login's own).
 
 ## Authentication
 

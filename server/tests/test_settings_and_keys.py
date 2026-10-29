@@ -66,6 +66,29 @@ async def test_market_setting_is_sent_to_spotify(rig: Rig) -> None:
     assert rig.fake.calls_to("GET", "/v1/me/player")[-1]["market"] == "DE"
 
 
+async def test_saving_the_page_settings_leaves_the_market_alone(rig: Rig) -> None:
+    await rig.login_ui()
+    await rig.client.put("/api/ui/settings", json={"market": "DE"})
+    body = {"target_playlist_id": "pl2", "default_device_id": "phone-1"}
+    resp = await rig.client.put("/api/ui/settings", json=body)
+    assert resp.json()["market"] == "DE"
+
+
+async def test_page_has_no_market_field(rig: Rig) -> None:
+    await rig.login_ui()
+    page = (await rig.client.get("/")).text
+    script = (await rig.client.get("/static/app.js")).text
+    assert "market" not in page.lower() and "market" not in script.lower()
+
+
+async def test_device_list_shows_a_device_that_appears_later(rig: Rig) -> None:
+    await rig.login_ui()
+    first = (await rig.client.get("/api/ui/spotify/devices")).json()["devices"]
+    rig.fake.devices.append({"id": "ph-2", "name": "Fresh iPhone", "type": "Smartphone"})
+    again = (await rig.client.get("/api/ui/spotify/devices")).json()["devices"]
+    assert [d["id"] for d in again] == [d["id"] for d in first] + ["ph-2"]
+
+
 async def test_settings_survive_a_restart(rig: Rig, tmp_path: Path) -> None:
     await rig.login_ui()
     await rig.client.put("/api/ui/settings", json={"target_playlist_id": "pl3"})

@@ -2,10 +2,14 @@
 
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 3000;
+const DEVICE_POLL_MS = 10000;
 const RENEW_WARNING_DAYS = 14;
 let playback = null;
 let authMode = "key";
 let busy = false;
+let settings = {};
+let deviceSignature = "";
+let deviceChosen = false;
 
 async function api(method, path, body) {
   const options = { method, credentials: "same-origin", headers: { "X-Baton-Request": "1" } };
@@ -162,7 +166,7 @@ async function loadStatus() {
     pill.classList.add("bad");
     $("sp-status").textContent = sp.message || "Login expired.";
   } else {
-    pill.textContent = `Spotify login: ${sp.expires_in_days} days left`;
+    pill.textContent = `Spotify: ${sp.expires_in_days} days left`;
     pill.classList.add(sp.expires_in_days <= RENEW_WARNING_DAYS ? "bad" : "ok");
     $("sp-status").textContent =
       `Logged in. Spotify logins last six months; renew in ${sp.expires_in_days} days.`;
@@ -173,32 +177,50 @@ async function loadStatus() {
   }
   $("sp-login").textContent = sp.linked ? "Log in again" : "Log in with Spotify";
   $("sp-disconnect").hidden = !sp.linked;
-  $("set-market").value = result.data.settings.market || "";
+  settings = result.data.settings;
   return result.data;
 }
 
-async function loadPickers(settings) {
-  const [playlists, devices] = await Promise.all([api("GET", "/spotify/playlists"), api("GET", "/spotify/devices")]);
-  const target = settings.target_playlist ? settings.target_playlist.id : "";
-  const device = settings.default_device ? settings.default_device.id : "";
-  const playlistItems = playlists.ok ? playlists.data.playlists : [];
-  const deviceItems = devices.ok ? devices.data.devices : [];
-  const known = (ref, items) => (ref && !items.some((i) => i.id === ref.id) ? [ref] : []);
-  select($("set-playlist"), [...playlistItems, ...known(settings.target_playlist, playlistItems)], target, "None");
-  select($("set-device"), [...deviceItems, ...known(settings.default_device, deviceItems)], device, "None");
-  const active = deviceItems.find((d) => d.is_active);
-  select($("device-select"), deviceItems, active ? active.id : "");
+const known = (ref, items) => (ref && !items.some((i) => i.id === ref.id) ? [ref] : []);
+
+async function loadPlaylists() {
+  const result = await api("GET", "/spotify/playlists");
+  const items = result.ok ? result.data.playlists : [];
+  const target = settings.target_playlist;
+  select($("set-playlist"), [...items, ...known(target, items)], target ? target.id : "", "None");
+}
+
+// The device lists are read again whenever they may have changed: a phone shows up once its
+// Spotify app has been opened, so they follow the page's polling, a tab coming back to the
+// front and a list being touched.
+async function loadDevices() {
+  if (document.hidden || $("app-view").hidden) return;
+  const result = await api("GET", "/spotify/devices");
+  if (!result.ok) return;
+  const items = result.data.devices;
+  const signature = JSON.stringify(items.map((d) => [d.id, d.name, d.is_active]));
+  if (signature === deviceSignature) return;
+  const first = deviceSignature === "";
+  deviceSignature = signature;
+  const choice = $("device-select").value;
+  const fallback = settings.default_device;
+  const wanted = first ? (fallback ? fallback.id : "") : $("set-device").value;
+  select($("set-device"), [...items, ...known(fallback, items)], wanted, "None");
+  const active = items.find((d) => d.is_active);
+  select($("device-select"), items, deviceChosen && items.some((d) => d.id === choice) ? choice : active ? active.id : "");
 }
 
 async function saveSettings() {
   const body = {
     target_playlist_id: $("set-playlist").value || null,
     default_device_id: $("set-device").value || null,
-    market: $("set-market").value.trim() || null,
   };
   const result = await api("PUT", "/settings", body);
   $("set-msg").textContent = result.ok ? "Saved." : detail(result);
-  if (result.ok) await refreshState();
+  if (result.ok) {
+    settings = result.data;
+    await refreshState();
+  }
 }
 
 async function loadRecent() {
@@ -279,7 +301,7 @@ async function start() {
   }
   const status = await loadStatus();
   if (!status) return;
-  await Promise.all([refreshState(), loadPickers(status.settings), loadRecent(), loadKeys()]);
+  await Promise.all([refreshState(), loadPlaylists(), loadDevices(), loadRecent(), loadKeys()]);
 }
 
 $("login-form").addEventListener("submit", login);
@@ -296,8 +318,15 @@ $("btn-playlist").addEventListener("click", () =>
 $("device-switch").addEventListener("click", async () => {
   const id = $("device-select").value;
   if (!id) return;
+  deviceChosen = false;
   applyReply(await api("POST", "/device", { device_id: id }));
+  await loadDevices();
 });
+$("device-select").addEventListener("change", () => { deviceChosen = true; });
+for (const id of ["device-select", "set-device"]) {
+  $(id).addEventListener("pointerdown", loadDevices);
+  $(id).addEventListener("focus", loadDevices);
+}
 $("set-save").addEventListener("click", saveSettings);
 $("key-form").addEventListener("submit", createKey);
 $("sp-login").addEventListener("click", async () => {
@@ -313,7 +342,8 @@ $("sp-disconnect").addEventListener("click", async () => {
   await api("POST", "/spotify/disconnect", {});
   await start();
 });
-document.addEventListener("visibilitychange", refreshState);
+document.addEventListener("visibilitychange", () => { refreshState(); loadDevices(); });
 setInterval(refreshState, POLL_MS);
+setInterval(loadDevices, DEVICE_POLL_MS);
 setInterval(tick, 500);
 start();

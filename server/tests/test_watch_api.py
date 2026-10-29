@@ -331,10 +331,43 @@ async def test_recent_playlists_limit_is_fifteen(rig: Rig) -> None:
     assert len((await call(rig, "GET", "playlists"))["playlists"]) == 15
 
 
-async def test_recent_playlist_with_unknown_name_still_listed(rig: Rig) -> None:
-    rig.fake.recent_contexts = ["editorial1"]
+async def test_recent_playlists_leave_out_ones_that_cannot_be_named(rig: Rig) -> None:
+    rig.fake.recent_contexts = ["editorial1", "pl1", "editorial2"]
     body = await call(rig, "GET", "playlists")
-    assert body["playlists"] == [{"id": "editorial1", "name": "Unnamed playlist"}]
+    assert body["playlists"] == [{"id": "pl1", "name": "My Shazam"}]
+    asked = len(rig.fake.calls_to("GET", "/v1/playlists/editorial1"))
+    rig.clock.t += 121
+    await call(rig, "GET", "playlists")
+    assert len(rig.fake.calls_to("GET", "/v1/playlists/editorial1")) == asked
+    rig.clock.t += 3600
+    await call(rig, "GET", "playlists")
+    assert len(rig.fake.calls_to("GET", "/v1/playlists/editorial1")) == asked + 1
+
+
+async def test_recent_playlists_fill_up_past_unnamable_ones(rig: Rig) -> None:
+    from tests.fake_spotify import FakePlaylist
+
+    for i in range(20):
+        rig.fake.playlists[f"p{i}"] = FakePlaylist(f"p{i}", f"List {i}")
+    rig.fake.recent_contexts = ["gone1", "gone2", *[f"p{i}" for i in range(20)]]
+    body = await call(rig, "GET", "playlists")
+    assert [p["id"] for p in body["playlists"]] == [f"p{i}" for i in range(15)]
+
+
+async def test_recent_playlist_played_with_smart_shuffle_is_the_same_playlist(rig: Rig) -> None:
+    rig.fake.recent_contexts = [
+        "spotify:playlist:pl2?sessionId=1&mode=enhanced",
+        "spotify:playlist:pl2?sessionId=2&mode=enhanced",
+        "spotify:user:alex:playlist:pl2",
+        "pl2",
+        "pl3",
+    ]
+    body = await call(rig, "GET", "playlists")
+    assert body["playlists"] == [
+        {"id": "pl2", "name": "Cycling"},
+        {"id": "pl3", "name": "Sunday morning"},
+    ]
+    assert len(rig.fake.calls_to("GET", "/v1/playlists/pl2")) == 1
 
 
 # authentication -------------------------------------------------------------------------

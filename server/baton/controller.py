@@ -20,6 +20,9 @@ ALREADY = "already"
 ERROR = "error"
 RESTART_THRESHOLD_MS = 5000
 MAX_RECENT_PLAYLISTS = 15
+# Recently played items Spotify returns at most; names are looked up until enough resolve.
+RECENT_CANDIDATES = 50
+UNAVAILABLE_SECONDS = 3600
 PLAYLIST_ID_PATTERN = r"[A-Za-z0-9]{1,64}"
 PLAYLIST_ID = re.compile(f"^{PLAYLIST_ID_PATTERN}$")
 PLAY_MODES = ("normal", "shuffle", "smart")
@@ -131,6 +134,7 @@ class Controller:
         self._recent_ttl = recent_cache_seconds
         self._recent: tuple[float, list[Playlist]] | None = None
         self._names: dict[str, str] = {}
+        self._unavailable: dict[str, float] = {}
         self._state_ttl = state_cache_seconds
         self._state_cache: tuple[float, Reply] | None = None
         self._state_inflight: asyncio.Future[Reply] | None = None
@@ -325,23 +329,42 @@ class Controller:
 
     # recent playlists
 
-    async def _playlist_name(self, playlist_id: str) -> str:
-        if playlist_id not in self._names:
-            try:
-                self._names[playlist_id] = (await self._provider.playlist(playlist_id)).name
-            except errors.ProviderError as exc:
-                if exc.code in (errors.SPOTIFY_AUTH, errors.SPOTIFY_RATE_LIMITED):
-                    raise
-                return "Unnamed playlist"
-        return self._names[playlist_id]
+    async def _playlist_name(self, playlist_id: str) -> str | None:
+        """The playlist's name, None when Spotify does not let this login read it.
+
+        Spotify-owned mixes and editorial lists answer with an error to apps in development
+        mode; that outcome is remembered for an hour so it is not asked again on every refresh.
+        """
+        if playlist_id in self._names:
+            return self._names[playlist_id]
+        if (
+            self._now() - self._unavailable.get(playlist_id, -UNAVAILABLE_SECONDS)
+            < UNAVAILABLE_SECONDS
+        ):
+            return None
+        try:
+            name = (await self._provider.playlist(playlist_id)).name
+        except errors.ProviderError as exc:
+            if exc.code in (errors.SPOTIFY_AUTH, errors.SPOTIFY_RATE_LIMITED):
+                raise
+            self._unavailable[playlist_id] = self._now()
+            return None
+        if not name:
+            return None
+        self._names[playlist_id] = name
+        return name
 
     async def recent_playlists(self) -> list[Playlist]:
-        """Recently played playlists, most recent first, cached for a short time."""
+        """Recently played playlists that can be named, most recent first, cached briefly."""
         if self._recent and self._now() - self._recent[0] < self._recent_ttl:
             return self._recent[1]
-        ids = await self._provider.recent_playlist_ids(MAX_RECENT_PLAYLISTS)
-        names = [await self._playlist_name(i) for i in ids]
-        playlists = [Playlist(i, n) for i, n in zip(ids, names, strict=True)]
+        playlists: list[Playlist] = []
+        for playlist_id in await self._provider.recent_playlist_ids(RECENT_CANDIDATES):
+            name = await self._playlist_name(playlist_id)
+            if name is not None:
+                playlists.append(Playlist(playlist_id, name))
+            if len(playlists) >= MAX_RECENT_PLAYLISTS:
+                break
         self._recent = (self._now(), playlists)
         return playlists
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -19,6 +20,9 @@ MEMBER_MAX_PAGES = 220
 MAX_RETRY_AFTER_SECONDS = 300
 DEFAULT_MARKET = "from_token"
 PLAYER_PATH = "/me/player"
+# A playlist context URI; Spotify appends a query (``?sessionId=…&mode=enhanced``) to the
+# ones that were played with smart shuffle, and older clients wrote ``spotify:user:<id>:playlist:``.
+PLAYLIST_CONTEXT = re.compile(r"^spotify:(?:user:[^:]+:)?playlist:([A-Za-z0-9]+)(?:\?.*)?$")
 
 
 def _first_artist(item: dict[str, Any]) -> str | None:
@@ -313,11 +317,11 @@ class SpotifyProvider(Provider):
         seen: list[str] = []
         for entry in resp.json().get("items", []):
             context = (entry or {}).get("context") or {}
-            if context.get("type") != "playlist" or not context.get("uri"):
+            match = PLAYLIST_CONTEXT.match(str(context.get("uri") or ""))
+            if context.get("type") != "playlist" or not match:
                 continue
-            playlist_id = str(context["uri"]).rsplit(":", 1)[-1]
-            if playlist_id not in seen:
-                seen.append(playlist_id)
+            if match[1] not in seen:
+                seen.append(match[1])
             if len(seen) >= limit:
                 break
         return seen
