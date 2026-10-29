@@ -129,10 +129,11 @@ async def require_watch_key(request: Request) -> None:
     state = app_state(request)
     client = client_id(request, state.config)
     token = bearer_token(request)
-    scope = state.store.verify_watch_key(token) if token is not None else None
-    if scope is not None:
+    key = state.store.verify_watch_key(token) if token is not None else None
+    if key is not None:
         state.watch_throttle.succeed(client)
-        request.state.key_scope = scope
+        request.state.key_id = key.id
+        request.state.key_scope = key.scope
         return
     state.watch_throttle.fail(client)
     if state.watch_throttle.locked(client):

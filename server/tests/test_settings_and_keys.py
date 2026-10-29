@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 import sqlite3
+import subprocess
+from importlib import resources
 from pathlib import Path
 
 import httpx
+import pytest
 
 from baton.app import create_app
 from baton.config import load_config
@@ -18,10 +23,12 @@ XHDR = {"X-Baton-Request": "1"}
 async def test_target_playlist_round_trip_stores_name(rig: Rig) -> None:
     await rig.login_ui()
     pickable = (await rig.client.get("/api/ui/spotify/playlists")).json()["playlists"]
-    assert {"id": "pl2", "name": "Cycling"} in pickable
-    resp = await rig.client.put("/api/ui/settings", json={"target_playlist_id": "pl2"})
+    assert {"id": "pl20000000000000000000", "name": "Cycling"} in pickable
+    resp = await rig.client.put(
+        "/api/ui/settings", json={"target_playlist_id": "pl20000000000000000000"}
+    )
     assert resp.status_code == 200
-    assert resp.json()["target_playlist"] == {"id": "pl2", "name": "Cycling"}
+    assert resp.json()["target_playlist"] == {"id": "pl20000000000000000000", "name": "Cycling"}
     assert (await rig.client.get("/api/ui/settings")).json()["target_playlist"]["name"] == "Cycling"
     state = (await rig.watch_get("state")).json()["state"]
     assert state["playlist_name"] == "Cycling"
@@ -51,7 +58,7 @@ async def test_partial_update_keeps_other_settings(rig: Rig) -> None:
     await rig.login_ui()
     resp = await rig.client.put("/api/ui/settings", json={"market": "de"})
     body = resp.json()
-    assert body["market"] == "DE" and body["target_playlist"]["id"] == "pl1"
+    assert body["market"] == "DE" and body["target_playlist"]["id"] == "pl10000000000000000000"
     assert body["default_device"]["id"] == "kitchen-1"
     bad = await rig.client.put("/api/ui/settings", json={"market": "Germany"})
     assert bad.status_code == 422
@@ -69,7 +76,7 @@ async def test_market_setting_is_sent_to_spotify(rig: Rig) -> None:
 async def test_saving_the_page_settings_leaves_the_market_alone(rig: Rig) -> None:
     await rig.login_ui()
     await rig.client.put("/api/ui/settings", json={"market": "DE"})
-    body = {"target_playlist_id": "pl2", "default_device_id": "phone-1"}
+    body = {"target_playlist_id": "pl20000000000000000000", "default_device_id": "phone-1"}
     resp = await rig.client.put("/api/ui/settings", json=body)
     assert resp.json()["market"] == "DE"
 
@@ -91,14 +98,14 @@ async def test_device_list_shows_a_device_that_appears_later(rig: Rig) -> None:
 
 async def test_settings_survive_a_restart(rig: Rig, tmp_path: Path) -> None:
     await rig.login_ui()
-    await rig.client.put("/api/ui/settings", json={"target_playlist_id": "pl3"})
+    await rig.client.put("/api/ui/settings", json={"target_playlist_id": "pl30000000000000000000"})
     app_state_of(rig.app).store.close()
     second = create_app(
         load_config(base_env(tmp_path / "data")),
         transport=httpx.ASGITransport(app=create_fake_spotify(rig.fake)),
         now=rig.clock,
     )
-    assert app_state_of(second).store.get_settings().target_playlist.id == "pl3"
+    assert app_state_of(second).store.get_settings().target_playlist.id == "pl30000000000000000000"
     app_state_of(second).store.close()
 
 
@@ -156,15 +163,15 @@ async def test_key_name_is_required(rig: Rig) -> None:
 async def test_saved_playlists_round_trip_and_survive_other_changes(rig: Rig) -> None:
     await rig.login_ui()
     saved = [
-        {"id": "37i9dQZF1EXAMPLEONE1", "name": " Daily Mix 1 "},
-        {"id": "5Pplaylist", "name": "Feel Good Indie"},
-        {"id": "5Pplaylist", "name": "Feel Good Indie again"},
+        {"id": "37i9dQZF1EXAMPLEONE100", "name": " Daily Mix 1 "},
+        {"id": "5Pplaylist000000000000", "name": "Feel Good Indie"},
+        {"id": "5Pplaylist000000000000", "name": "Feel Good Indie again"},
     ]
     resp = await rig.client.put("/api/ui/settings", json={"saved_playlists": saved})
     assert resp.status_code == 200
     assert resp.json()["saved_playlists"] == [
-        {"id": "37i9dQZF1EXAMPLEONE1", "name": "Daily Mix 1"},
-        {"id": "5Pplaylist", "name": "Feel Good Indie again"},
+        {"id": "37i9dQZF1EXAMPLEONE100", "name": "Daily Mix 1"},
+        {"id": "5Pplaylist000000000000", "name": "Feel Good Indie again"},
     ]
     other = await rig.client.put("/api/ui/settings", json={"market": "de"})
     assert len(other.json()["saved_playlists"]) == 2
@@ -179,8 +186,10 @@ async def test_saved_playlists_are_validated(rig: Rig) -> None:
     await rig.login_ui()
     for bad in (
         [{"id": "bad..id", "name": "x"}],
-        [{"id": "abc", "name": ""}],
-        [{"id": f"p{i}", "name": "x"} for i in range(11)],
+        [{"id": "playlist/abc", "name": "x"}],
+        [{"id": "hello", "name": "x"}],
+        [{"id": "5Pplaylist000000000000", "name": ""}],
+        [{"id": f"p{i:021d}", "name": "x"} for i in range(11)],
     ):
         resp = await rig.client.put("/api/ui/settings", json={"saved_playlists": bad})
         assert resp.status_code == 422
@@ -202,3 +211,36 @@ async def test_page_offers_saved_playlists(rig: Rig) -> None:
     script = (await rig.client.get("/static/app.js")).text
     assert 'id="saved-form"' in page and 'id="saved"' in page
     assert "saved_playlists" in script
+
+
+PLAYLIST_ID_CASES = [
+    ("5Pplaylist000000000000", "5Pplaylist000000000000"),
+    ("https://open.spotify.com/playlist/5Pplaylist000000000000?si=abc", "5Pplaylist000000000000"),
+    ("https://open.spotify.com/intl-de/playlist/5Pplaylist000000000000", "5Pplaylist000000000000"),
+    (
+        "https://open.spotify.com/user/alex.b/playlist/5Pplaylist000000000000",
+        "5Pplaylist000000000000",
+    ),
+    ("spotify:playlist:5Pplaylist000000000000", "5Pplaylist000000000000"),
+    ("spotify:user:alex:playlist:5Pplaylist000000000000", "5Pplaylist000000000000"),
+    ("playlist/abc", None),
+    ("hello", None),
+    ("5Pplaylist00000000000", None),
+    ("5Pplaylist0000000000000", None),
+    ("https://example.com/playlist/5Pplaylist000000000000", None),
+]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_page_parses_only_real_playlist_ids() -> None:
+    script = resources.files("baton").joinpath("static/app.js").read_text()
+    start = script.index("function playlistId")
+    function = script[start : script.index("\n}\n", start) + 3]
+    program = (
+        f"{function}\nconst cases = {json.dumps([c[0] for c in PLAYLIST_ID_CASES])};\n"
+        "console.log(JSON.stringify(cases.map(playlistId)));"
+    )
+    done = subprocess.run(
+        ["node", "-e", program], capture_output=True, text=True, check=True, timeout=30
+    )
+    assert json.loads(done.stdout) == [c[1] for c in PLAYLIST_ID_CASES]

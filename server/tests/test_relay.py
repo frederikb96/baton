@@ -96,6 +96,32 @@ async def test_relay_never_shows_the_token(rig: Rig, caplog: pytest.LogCaptureFi
         assert token not in caplog.text
 
 
+async def test_each_relay_call_leaves_one_log_line_without_query_or_token(
+    rig: Rig, caplog: pytest.LogCaptureFixture
+) -> None:
+    key, plain = app_state_of(rig.app).store.create_watch_key("logged", "agent")
+    caplog.set_level(logging.DEBUG)
+    resp = await rig.client.get(
+        "/api/watch/spotify/me/player?market=DE&secret=hunter2",
+        headers={"Authorization": f"Bearer {plain}"},
+    )
+    assert resp.status_code == 200
+    lines = [r.getMessage() for r in caplog.records if r.name == "baton.relay"]
+    assert lines == [f"relay key={key.id} GET /api/watch/spotify/me/player -> 200"]
+    assert plain not in caplog.text and not any(t in caplog.text for t in rig.fake.valid_access)
+
+
+async def test_local_rate_limit_answer_carries_retry_after(rig: Rig) -> None:
+    headers = await agent_headers(rig)
+    rig.fake.fail("GET /v1/me/player", 429, headers={"Retry-After": "30"})
+    first = await rig.client.get("/api/watch/spotify/me/player", headers=headers)
+    assert first.status_code == 429 and first.headers["retry-after"] == "30"
+    rig.clock.t += 10
+    local = await rig.client.get("/api/watch/spotify/me/player", headers=headers)
+    assert local.status_code == 429 and local.json()["error"] == "spotify_rate_limited"
+    assert local.headers["retry-after"] == "20"
+
+
 async def test_relay_without_a_spotify_login_answers_conflict(rig: Rig) -> None:
     headers = await agent_headers(rig)
     app_state_of(rig.app).accounts.disconnect()
@@ -163,6 +189,7 @@ def test_keys_from_before_scopes_stay_watch_keys(tmp_path: Path) -> None:
     db.commit()
     db.close()
     store = Store(tmp_path, lambda: 100.0)
-    assert store.verify_watch_key("bk_old") == "watch"
+    verified = store.verify_watch_key("bk_old")
+    assert verified is not None and verified.scope == "watch"
     assert [k.scope for k in store.list_watch_keys()] == ["watch"]
     store.close()

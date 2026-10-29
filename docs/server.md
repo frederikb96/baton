@@ -7,7 +7,7 @@ One container: the watch API ([api.md](api.md)), a small web page for playback c
 - Create your own Spotify developer app (below), then copy `server/compose.example.yaml` and a `.env` with the variables from the table.
 - `docker compose up -d`, open the public URL, sign in, press *Log in with Spotify*, create a watch key and enter it in the watch app's settings.
 - Generate the access key with `openssl rand -base64 32`.
-- The image runs as uid 1000 with a read-only root filesystem; it writes only to `/data`. `GET /healthz` answers 200 without authentication.
+- The image runs as uid 1000 with a read-only root filesystem; it writes only to `/data`. `GET /healthz` answers 200 without authentication. In `proxy` mode a proxy in front may still put its own login ahead of it.
 - The server speaks HTTP only. The watch (through the phone) and Spotify's redirect URI need an HTTPS address, so a TLS-terminating reverse proxy or tunnel is part of every install. Plain `http://127.0.0.1:<port>` works for the Spotify login from the same machine, not for the watch.
 
 ## Spotify developer app
@@ -48,7 +48,7 @@ Bootstrap values only. Each is read from the environment variable `BATON_` plus 
 
 The server refuses to start when a required value is missing or invalid and says which one. Other `BATON_*` variables are ignored, so the service-link variables Kubernetes injects for a Service named `baton` (`BATON_PORT=tcp://…`, `BATON_SERVICE_HOST`, …) do not interfere; that is why the listen settings are called `BATON_LISTEN_HOST` and `BATON_LISTEN_PORT`.
 
-Everything a user changes while the server runs lives in the database and is set through the web page or the API: target playlist, default playback device and watch keys.
+Everything a user changes while the server runs lives in the database and is set through the web page or the API: target playlist, saved playlists, default playback device, market and the watch keys with their scope.
 
 Spotify needs a market (a two-letter country code) to say which tracks are playable; the server asks for `from_token`, which Spotify resolves from the login, so nothing has to be set. To pin one anyway, change the stored setting through the API while signed in to the page, for example `PUT /api/ui/settings` with `{"market": "DE"}` (`null` goes back to the login's own).
 
@@ -57,7 +57,7 @@ Spotify needs a market (a two-letter country code) to say which tracks are playa
 Two route families, never sharing a credential:
 
 - `/api/watch/` accepts only a valid key (`Authorization: Bearer`). Cookies and identity headers are ignored there, and a key opens nothing outside it. Keys are created on the web page, shown once, stored hashed and revocable. Each key has a scope: a `watch` key (the default, and what every key from before scopes is) opens the watch API; an `agent` key also opens the Spotify relay described in [api.md](api.md#spotify-relay). The scope is chosen when the key is created and can be changed on the page afterwards (`PATCH /api/ui/keys/<id>` with `{"scope": "agent"}` or `"watch"`); the key value stays the same. An agent key is a full Spotify client for the linked account, so give one only to something you trust as much. The key is checked first, so a valid key always works; a client that keeps sending wrong keys is only answered more slowly, never locked out.
-- Everything else (web page, `/api/ui/`, settings, keys, Spotify login) is guarded by the auth mode. Only `/healthz` is open.
+- Everything else (web page, `/api/ui/`, settings, keys, Spotify login) is guarded by the auth mode. Only `/healthz` and the icon files (`/favicon.ico`, `/apple-touch-icon.png`, `/static/icon-*.png`, `/static/apple-touch-icon.png`) are open.
 
 Modes:
 
@@ -70,7 +70,7 @@ Request bodies on `/api/ui/` and `/api/watch/` are capped at 16 KiB (`413` above
 
 ## Web page API
 
-The page uses `/api/ui/`: `session`, `login`, `logout`, `status`, `state`, the same command paths as the watch API, `device`, `playlists/recent`, `playlists/<id>/play`, `spotify/playlists`, `spotify/devices`, `spotify/disconnect`, `settings` and `keys`. It is meant for the page, not as a stable interface. The Spotify login starts with `POST /auth/spotify/login`, which answers `{"url": …}` for the page to open, and ends at the callback `/auth/spotify/callback`. It is a POST so that it passes the same-origin check above and a link on another site cannot start it.
+The page uses `/api/ui/`: `session`, `login`, `logout`, `status`, `state`, the same command paths as the watch API, `device`, `playlists/recent`, `playlists/<id>/play`, `spotify/playlists`, `spotify/devices`, `spotify/disconnect`, `settings` (including `saved_playlists`) and `keys` (`PATCH keys/<id>` changes a key's scope). It is meant for the page, not as a stable interface. The Spotify login starts with `POST /auth/spotify/login`, which answers `{"url": …}` for the page to open, and ends at the callback `/auth/spotify/callback`. It is a POST so that it passes the same-origin check above and a link on another site cannot start it.
 
 ## Development
 

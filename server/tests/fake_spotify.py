@@ -107,11 +107,20 @@ class FakeSpotify:
         fake.progress_ms = 83000
         fake.liked = ["spotify:track:t1"]
         fake.playlists = {
-            "pl1": FakePlaylist("pl1", "My Shazam", ["spotify:track:t2"]),
-            "pl2": FakePlaylist("pl2", "Cycling", ["spotify:track:t0", "spotify:track:t3"]),
-            "pl3": FakePlaylist("pl3", "Sunday morning", []),
+            "pl10000000000000000000": FakePlaylist(
+                "pl10000000000000000000", "My Shazam", ["spotify:track:t2"]
+            ),
+            "pl20000000000000000000": FakePlaylist(
+                "pl20000000000000000000", "Cycling", ["spotify:track:t0", "spotify:track:t3"]
+            ),
+            "pl30000000000000000000": FakePlaylist("pl30000000000000000000", "Sunday morning", []),
         }
-        fake.recent_contexts = ["pl2", "pl1", "pl2", "pl3"]
+        fake.recent_contexts = [
+            "pl20000000000000000000",
+            "pl10000000000000000000",
+            "pl20000000000000000000",
+            "pl30000000000000000000",
+        ]
         return fake
 
 

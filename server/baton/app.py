@@ -27,6 +27,10 @@ CSP = (
     "base-uri 'none'; form-action 'self'"
 )
 STATIC_DIR = Path(str(resources.files("baton").joinpath("static")))
+# Icon files browsers and home screens fetch without credentials, served in every auth mode.
+ICON_FILES = ("icon-32.png", "icon-192.png", "icon-512.png", "apple-touch-icon.png")
+ICON_ROUTES = {"/favicon.ico": "icon-32.png", "/apple-touch-icon.png": "apple-touch-icon.png"}
+ICON_PATHS = {*ICON_ROUTES, *(f"/static/{name}" for name in ICON_FILES)}
 
 
 def create_app(
@@ -91,7 +95,7 @@ def create_app(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         path = request.url.path
-        proxy_open = path == HEALTH_PATH or path.startswith(WATCH_PREFIX)
+        proxy_open = path == HEALTH_PATH or path.startswith(WATCH_PREFIX) or path in ICON_PATHS
         if config.auth_mode == "proxy" and not proxy_open and proxy_user(request, config) is None:
             response: Response = JSONResponse({"detail": "Not authenticated."}, status_code=401)
         else:
@@ -114,6 +118,13 @@ def create_app(
     @app.get("/", include_in_schema=False)
     async def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+
+    for route, name in ICON_ROUTES.items():
+
+        def icon(name: str = name) -> FileResponse:
+            return FileResponse(STATIC_DIR / name)
+
+        app.add_api_route(route, icon, include_in_schema=False)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

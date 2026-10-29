@@ -30,7 +30,8 @@ SPOTIFY_OWNED_PREFIX = "37i9dQZF1"
 # Recently played items Spotify returns at most; names are looked up until enough resolve.
 RECENT_CANDIDATES = 50
 UNAVAILABLE_SECONDS = 3600
-PLAYLIST_ID_PATTERN = r"[A-Za-z0-9]{1,64}"
+# A Spotify playlist id is 22 base62 characters.
+PLAYLIST_ID_PATTERN = r"[A-Za-z0-9]{22}"
 PLAYLIST_ID = re.compile(f"^{PLAYLIST_ID_PATTERN}$")
 PLAY_MODES = ("normal", "shuffle", "smart")
 UNEXPECTED_MESSAGE = "Spotify sent an answer baton does not understand."
@@ -400,7 +401,9 @@ class Controller:
     @guarded
     async def play_playlist(self, playlist_id: str, mode: str) -> Reply:
         """Start a playlist as normal, shuffled or smart (falls back to shuffled)."""
-        if mode not in PLAY_MODES or not PLAYLIST_ID.match(playlist_id):
+        if mode not in PLAY_MODES or not (
+            playlist_id == LIKED_ID or PLAYLIST_ID.match(playlist_id)
+        ):
             return failure(errors.BAD_REQUEST, "Unknown playlist id or mode.")
         pb = await self._provider.playback()
         device_id = None

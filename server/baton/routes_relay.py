@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -16,6 +17,7 @@ router = APIRouter(
     dependencies=[Depends(require_watch_key), Depends(require_agent_scope)],
 )
 
+log = logging.getLogger("baton.relay")
 METHODS = ["GET", "POST", "PUT", "DELETE"]
 # Letters, digits and the few punctuation marks Web API paths use; no dots, so a path cannot
 # climb out of the Web API base, and no percent signs, so nothing is decoded a second time.
@@ -23,10 +25,23 @@ SEGMENT = re.compile(r"^[A-Za-z0-9_:-]+$")
 STATUS_FOR_CODE = {errors.SPOTIFY_AUTH: 409, errors.SPOTIFY_RATE_LIMITED: 429}
 
 
-def error(status: int, code: str, message: str) -> Response:
+def error(status: int, code: str, message: str, headers: dict[str, str] | None = None) -> Response:
     """An error in the shape of the other JSON errors."""
     body = {"result": "error", "error": code, "message": message, "state": None}
-    return Response(json.dumps(body), status_code=status, media_type="application/json")
+    return Response(
+        json.dumps(body), status_code=status, media_type="application/json", headers=headers
+    )
+
+
+def audit(request: Request, status: int | str) -> None:
+    """One log line per relay call: key id, method, path without query, Spotify's status."""
+    log.info(
+        "relay key=%s %s %s -> %s",
+        request.state.key_id,
+        request.method,
+        request.url.path,
+        status,
+    )
 
 
 @router.api_route("/{path:path}", methods=METHODS)
@@ -47,7 +62,11 @@ async def relay(request: Request, path: str) -> Response:
             request.method, "/" + path, request.query_params.multi_items(), payload
         )
     except errors.ProviderError as exc:
-        return error(STATUS_FOR_CODE.get(exc.code, 502), exc.code, exc.message)
+        status = STATUS_FOR_CODE.get(exc.code, 502)
+        audit(request, "none")
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        return error(status, exc.code, exc.message, headers)
+    audit(request, answer.status)
     headers = {"Retry-After": answer.retry_after} if answer.retry_after else {}
     return Response(
         answer.content,

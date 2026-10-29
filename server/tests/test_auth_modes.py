@@ -287,6 +287,21 @@ async def test_proxy_mode_watch_key_and_health_need_no_header(proxy_rig: Rig) ->
     assert (await proxy_rig.watch_get("state")).status_code == 200
 
 
+async def test_proxy_mode_serves_icons_without_the_header(proxy_rig: Rig) -> None:
+    for path in [
+        "/favicon.ico",
+        "/apple-touch-icon.png",
+        "/static/icon-32.png",
+        "/static/icon-192.png",
+        "/static/icon-512.png",
+        "/static/apple-touch-icon.png",
+    ]:
+        resp = await proxy_rig.client.get(path)
+        assert resp.status_code == 200 and resp.content.startswith(b"\x89PNG"), path
+    assert (await proxy_rig.client.get("/")).status_code == 401
+    assert (await proxy_rig.client.get("/api/ui/session")).status_code == 401
+
+
 async def test_proxy_mode_login_callback_needs_the_header(proxy_rig: Rig) -> None:
     assert (await proxy_rig.client.get("/auth/spotify/callback?code=a&state=b")).status_code == 401
 

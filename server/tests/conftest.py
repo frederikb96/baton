@@ -161,6 +161,7 @@ async def rig(make_rig: Callable[..., Rig]) -> AsyncIterator[Rig]:
     r = make_rig()
     r.link()
     r.settings(
-        target_playlist=("pl1", "My Shazam"), default_device=("kitchen-1", "Kitchen speaker")
+        target_playlist=("pl10000000000000000000", "My Shazam"),
+        default_device=("kitchen-1", "Kitchen speaker"),
     )
     yield r

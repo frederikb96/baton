@@ -152,6 +152,7 @@ class SpotifyProvider(Provider):
         return errors.ProviderError(
             errors.SPOTIFY_RATE_LIMITED,
             f"Spotify rate limit reached. Retry in {math.ceil(wait)} s.",
+            retry_after=math.ceil(wait),
         )
 
     @staticmethod

@@ -1,7 +1,8 @@
 # Bootstrap configuration: every value here can be overridden by the environment
 # variable BATON_<KEY IN UPPER CASE>. A value of null has no default and must be
-# provided. Anything a user changes while the server runs (target playlist, default
-# device, watch keys) lives in the database, not here.
+# provided. Anything a user changes while the server runs (target playlist, saved
+# playlists, default device, market, watch keys and their scope) lives in the database,
+# not here.
 
 # Externally visible base URL, e.g. https://baton.example.com. HTTPS, or an
 # http://127.0.0.1:PORT loopback address. Spotify's redirect URI is built from it.

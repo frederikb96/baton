@@ -181,26 +181,28 @@ async def test_playlist_add_is_idempotent_without_duplicates(rig: Rig) -> None:
     assert first["result"] == "ok" and first["state"]["in_playlist"] is True
     second = await call(rig, "POST", "playlist/add")
     assert second["result"] == "already"
-    assert rig.fake.playlists["pl1"].items.count(T0) == 1
+    assert rig.fake.playlists["pl10000000000000000000"].items.count(T0) == 1
 
 
 async def test_playlist_add_of_member_does_not_write(rig: Rig) -> None:
     current_track(rig, T2)
     assert (await call(rig, "POST", "playlist/add"))["result"] == "already"
-    assert not rig.fake.calls_to("POST", "/v1/playlists/pl1/items")
+    assert not rig.fake.calls_to("POST", "/v1/playlists/pl10000000000000000000/items")
 
 
 async def test_playlist_remove_is_idempotent(rig: Rig) -> None:
     current_track(rig, T2)
     first = await call(rig, "POST", "playlist/remove")
     assert first["result"] == "ok" and first["state"]["in_playlist"] is False
-    assert rig.fake.playlists["pl1"].items == []
+    assert rig.fake.playlists["pl10000000000000000000"].items == []
     assert (await call(rig, "POST", "playlist/remove"))["result"] == "already"
-    assert len(rig.fake.calls_to("DELETE", "/v1/playlists/pl1/items")) == 1
+    assert len(rig.fake.calls_to("DELETE", "/v1/playlists/pl10000000000000000000/items")) == 1
 
 
 async def test_membership_check_reads_every_page(rig: Rig) -> None:
-    rig.fake.playlists["pl1"].items = [f"spotify:track:x{i}" for i in range(120)] + [T0]
+    rig.fake.playlists["pl10000000000000000000"].items = [
+        f"spotify:track:x{i}" for i in range(120)
+    ] + [T0]
     current_track(rig, T0)
     assert (await call(rig, "POST", "playlist/add"))["result"] == "already"
 
@@ -208,11 +210,11 @@ async def test_membership_check_reads_every_page(rig: Rig) -> None:
 async def test_playlist_membership_cache_follows_snapshot(rig: Rig) -> None:
     current_track(rig, T0)
     await call(rig, "GET", "state")
-    pages = len(rig.fake.calls_to("GET", "/v1/playlists/pl1/items"))
+    pages = len(rig.fake.calls_to("GET", "/v1/playlists/pl10000000000000000000/items"))
     await call(rig, "GET", "state")
-    assert len(rig.fake.calls_to("GET", "/v1/playlists/pl1/items")) == pages
-    rig.fake.playlists["pl1"].items.append(T0)
-    rig.fake.playlists["pl1"].touch()
+    assert len(rig.fake.calls_to("GET", "/v1/playlists/pl10000000000000000000/items")) == pages
+    rig.fake.playlists["pl10000000000000000000"].items.append(T0)
+    rig.fake.playlists["pl10000000000000000000"].touch()
     assert (await call(rig, "GET", "state"))["state"]["in_playlist"] is True
 
 
@@ -277,9 +279,9 @@ async def test_expired_access_token_is_refreshed_and_retried(rig: Rig) -> None:
 @pytest.mark.parametrize(("mode", "ok"), [("shuffle", True), ("normal", True), ("smart", True)])
 async def test_play_playlist_modes(rig: Rig, mode: str, ok: bool) -> None:
     rig.fake.shuffle = mode == "normal"
-    body = await call(rig, "POST", f"playlists/pl2/play?mode={mode}")
+    body = await call(rig, "POST", f"playlists/pl20000000000000000000/play?mode={mode}")
     assert body["result"] == "ok"
-    assert rig.fake.context == "spotify:playlist:pl2"
+    assert rig.fake.context == "spotify:playlist:pl20000000000000000000"
     assert rig.fake.shuffle is (mode != "normal")
     assert rig.fake.queue == ["spotify:track:t0", "spotify:track:t3"]
     if mode == "smart":
@@ -290,17 +292,19 @@ async def test_play_playlist_modes(rig: Rig, mode: str, ok: bool) -> None:
 
 async def test_play_playlist_defaults_to_normal(rig: Rig) -> None:
     rig.fake.shuffle = True
-    await call(rig, "POST", "playlists/pl2/play")
+    await call(rig, "POST", "playlists/pl20000000000000000000/play")
     assert rig.fake.shuffle is False
 
 
 async def test_play_playlist_without_device_uses_default_device(rig: Rig) -> None:
     rig.fake.active_device = None
-    body = await call(rig, "POST", "playlists/pl3/play?mode=shuffle")
+    body = await call(rig, "POST", "playlists/pl30000000000000000000/play?mode=shuffle")
     assert body["result"] == "ok" and rig.fake.active_device == "kitchen-1"
 
 
-@pytest.mark.parametrize("path", ["playlists/pl2/play?mode=chaos", "playlists/bad..id/play"])
+@pytest.mark.parametrize(
+    "path", ["playlists/pl20000000000000000000/play?mode=chaos", "playlists/bad..id/play"]
+)
 async def test_play_playlist_bad_request(rig: Rig, path: str) -> None:
     assert (await call(rig, "POST", path))["error"] == "bad_request"
 
@@ -321,17 +325,17 @@ async def test_recent_playlists_dedupe_cache_and_limit(rig: Rig) -> None:
     assert body["result"] == "ok" and body["state"] is None
     assert body["playlists"] == [
         LIKED,
-        {"id": "pl2", "name": "Cycling"},
-        {"id": "pl1", "name": "My Shazam"},
-        {"id": "pl3", "name": "Sunday morning"},
+        {"id": "pl20000000000000000000", "name": "Cycling"},
+        {"id": "pl10000000000000000000", "name": "My Shazam"},
+        {"id": "pl30000000000000000000", "name": "Sunday morning"},
     ]
     calls = len(rig.fake.calls)
     await call(rig, "GET", "playlists")
     assert len(rig.fake.calls) == calls
     rig.clock.t += 121
-    rig.fake.recent_contexts = ["pl3"]
-    assert [p["id"] for p in await recent_entries(rig)] == ["pl3"]
-    assert len([c for c in rig.fake.calls if c[1] == "/v1/playlists/pl3"]) == 1
+    rig.fake.recent_contexts = ["pl30000000000000000000"]
+    assert [p["id"] for p in await recent_entries(rig)] == ["pl30000000000000000000"]
+    assert len([c for c in rig.fake.calls if c[1] == "/v1/playlists/pl30000000000000000000"]) == 1
 
 
 async def test_recent_playlists_limit_is_fifteen(rig: Rig) -> None:
@@ -344,8 +348,8 @@ async def test_recent_playlists_limit_is_fifteen(rig: Rig) -> None:
 
 
 async def test_recent_playlists_leave_out_ones_that_cannot_be_named(rig: Rig) -> None:
-    rig.fake.recent_contexts = ["editorial1", "pl1", "editorial2"]
-    assert await recent_entries(rig) == [{"id": "pl1", "name": "My Shazam"}]
+    rig.fake.recent_contexts = ["editorial1", "pl10000000000000000000", "editorial2"]
+    assert await recent_entries(rig) == [{"id": "pl10000000000000000000", "name": "My Shazam"}]
     asked = len(rig.fake.calls_to("GET", "/v1/playlists/editorial1"))
     rig.clock.t += 121
     await call(rig, "GET", "playlists")
@@ -366,36 +370,40 @@ async def test_recent_playlists_fill_up_past_unnamable_ones(rig: Rig) -> None:
 
 async def test_recent_playlist_played_with_smart_shuffle_is_the_same_playlist(rig: Rig) -> None:
     rig.fake.recent_contexts = [
-        "spotify:playlist:pl2?sessionId=1&mode=enhanced",
-        "spotify:playlist:pl2?sessionId=2&mode=enhanced",
-        "spotify:user:alex:playlist:pl2",
-        "pl2",
-        "pl3",
+        "spotify:playlist:pl20000000000000000000?sessionId=1&mode=enhanced",
+        "spotify:playlist:pl20000000000000000000?sessionId=2&mode=enhanced",
+        "spotify:user:alex:playlist:pl20000000000000000000",
+        "pl20000000000000000000",
+        "pl30000000000000000000",
     ]
     assert await recent_entries(rig) == [
-        {"id": "pl2", "name": "Cycling"},
-        {"id": "pl3", "name": "Sunday morning"},
+        {"id": "pl20000000000000000000", "name": "Cycling"},
+        {"id": "pl30000000000000000000", "name": "Sunday morning"},
     ]
-    assert len(rig.fake.calls_to("GET", "/v1/playlists/pl2")) == 1
+    assert len(rig.fake.calls_to("GET", "/v1/playlists/pl20000000000000000000")) == 1
 
 
 async def test_unreadable_spotify_mix_is_listed_with_a_track_as_its_label(rig: Rig) -> None:
-    rig.fake.recent_contexts = ["37i9dQZF1EXAMPLEONE1", "pl1", "37i9dQZF1EXAMPLETWO2"]
+    rig.fake.recent_contexts = [
+        "37i9dQZF1EXAMPLEONE100",
+        "pl10000000000000000000",
+        "37i9dQZF1EXAMPLETWO200",
+    ]
     assert await recent_entries(rig) == [
-        {"id": "37i9dQZF1EXAMPLEONE1", "name": "Spotify mix (Blue Monday)"},
-        {"id": "pl1", "name": "My Shazam"},
-        {"id": "37i9dQZF1EXAMPLETWO2", "name": "Spotify mix (Blue Monday)"},
+        {"id": "37i9dQZF1EXAMPLEONE100", "name": "Spotify mix (Blue Monday)"},
+        {"id": "pl10000000000000000000", "name": "My Shazam"},
+        {"id": "37i9dQZF1EXAMPLETWO200", "name": "Spotify mix (Blue Monday)"},
     ]
 
 
 async def test_saved_playlists_come_after_liked_songs_and_name_mixes(rig: Rig) -> None:
-    rig.fake.recent_contexts = ["37i9dQZF1EXAMPLEONE1", "pl1"]
-    rig.settings(saved_playlists=(Ref("37i9dQZF1EXAMPLEONE1", "Daily Mix 1"),))
+    rig.fake.recent_contexts = ["37i9dQZF1EXAMPLEONE100", "pl10000000000000000000"]
+    rig.settings(saved_playlists=(Ref("37i9dQZF1EXAMPLEONE100", "Daily Mix 1"),))
     body = await call(rig, "GET", "playlists")
     assert body["playlists"] == [
         LIKED,
-        {"id": "37i9dQZF1EXAMPLEONE1", "name": "Daily Mix 1"},
-        {"id": "pl1", "name": "My Shazam"},
+        {"id": "37i9dQZF1EXAMPLEONE100", "name": "Daily Mix 1"},
+        {"id": "pl10000000000000000000", "name": "My Shazam"},
     ]
 
 
@@ -471,7 +479,9 @@ async def test_every_watch_route_requires_the_key(rig: Rig) -> None:
     routes = [(r.path, m) for r in routes_watch.router.routes for m in r.methods]  # type: ignore[attr-defined]
     assert len(routes) == 10
     for path, method in routes:
-        resp = await rig.client.request(method, path.replace("{playlist_id}", "pl1"))
+        resp = await rig.client.request(
+            method, path.replace("{playlist_id}", "pl10000000000000000000")
+        )
         assert resp.status_code == 401, (method, path)
 
 

@@ -248,9 +248,10 @@ async function loadRecent() {
 
 // saved playlists -----------------------------------------------------------------------
 
-// The id out of a playlist link, a spotify: URI or a bare id; null when it is none of them.
+// The id out of a playlist link (also the /user/<name>/playlist/ form), a spotify: URI or a
+// bare id; null when it is none of them. Playlist ids are 22 base62 characters.
 function playlistId(text) {
-  const match = text.trim().match(/^(?:https?:\/\/open\.spotify\.com\/(?:[\w-]+\/)?playlist\/|spotify:(?:user:[^:]+:)?playlist:)?([A-Za-z0-9]{1,64})(?:[?/#].*)?$/);
+  const match = text.trim().match(/^(?:https?:\/\/open\.spotify\.com\/(?:[^/?#]+\/)*playlist\/|spotify:(?:user:[^:]+:)?playlist:)?([A-Za-z0-9]{22})(?:[?/#].*)?$/);
   return match ? match[1] : null;
 }
 

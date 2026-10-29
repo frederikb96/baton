@@ -30,7 +30,7 @@ Garmin watches already control the music on your phone, and for play, pause and 
 
 - **Like and playlist add that never toggle.** A press that finds the song already liked answers `already` with its own vibration instead of un-liking it. You can mash the button on a bumpy road and the result is always the one you meant. Removing a like is a separate menu entry.
 - **A target playlist.** Double press adds the song to one playlist you picked, for example the one you collect songs to check out later in. Songs already in it are not added twice.
-- **Start a playlist.** The menu lists the playlists you played last and starts one normally, shuffled or with smart shuffle (plain shuffle where Spotify doesn't offer it).
+- **Start a playlist.** The menu lists Liked Songs, the playlists you saved and the ones you played last, and starts one normally, shuffled or with smart shuffle (plain shuffle where Spotify doesn't offer it).
 - **A web page for everything else.** The same server serves a small page for playback, the device, settings and watch keys.
 
 ## How it fits together
@@ -106,6 +106,10 @@ Baton shares no code with the projects below, but they were there first and are 
 - [csaavedrae/garmin-spotify-project](https://github.com/csaavedrae/garmin-spotify-project) (MIT): a watch app with an Android companion app on top of Spotify's App Remote SDK.
 
 Others that did similar things earlier: [ekallevig/garmin-spotify-widget](https://github.com/ekallevig/garmin-spotify-widget) and [krakentom/GarminSpotifyRemoteController](https://github.com/krakentom/GarminSpotifyRemoteController).
+
+## Not affiliated
+
+Baton is an independent project. It is not affiliated with, endorsed by or sponsored by Spotify or Garmin; Spotify, Garmin and Connect IQ are trademarks of their owners.
 
 ## License
 

@@ -107,7 +107,7 @@ async def test_a_relinked_track_is_the_same_track(rig: Rig, playing: str) -> Non
     rig.fake.index = 2
     body = envelope(await rig.watch_post("playlist/add"))
     assert body["result"] == "already"
-    assert rig.fake.playlists["pl1"].items == [T2]
+    assert rig.fake.playlists["pl10000000000000000000"].items == [T2]
 
 
 # Spotify login -------------------------------------------------------------------------
@@ -148,7 +148,7 @@ async def test_concurrent_playlist_adds_add_once(rig: Rig) -> None:
     rig.fake.index = rig.fake.queue.index(T0)
     replies = await asyncio.gather(*[rig.watch_post("playlist/add") for _ in range(2)])
     assert sorted(envelope(r)["result"] for r in replies) == ["already", "ok"]
-    assert rig.fake.playlists["pl1"].items.count(T0) == 1
+    assert rig.fake.playlists["pl10000000000000000000"].items.count(T0) == 1
 
 
 async def test_concurrent_play_pause_acts_one_after_the_other(rig: Rig) -> None:
@@ -179,12 +179,12 @@ async def test_state_reports_the_track_id(rig: Rig) -> None:
 )
 async def test_anchored_press_on_a_changed_track_changes_nothing(rig: Rig, path: str) -> None:
     rig.fake.index = rig.fake.queue.index(T0)
-    liked, items = list(rig.fake.liked), list(rig.fake.playlists["pl1"].items)
+    liked, items = list(rig.fake.liked), list(rig.fake.playlists["pl10000000000000000000"].items)
     resp = await rig.client.post(f"/api/watch/{path}?track=t3", headers=rig.watch)
     body = envelope(resp)
     assert body["result"] == "error" and body["error"] == "track_changed"
     assert body["state"]["track_id"] == "t0"
-    assert (rig.fake.liked, rig.fake.playlists["pl1"].items) == (liked, items)
+    assert (rig.fake.liked, rig.fake.playlists["pl10000000000000000000"].items) == (liked, items)
 
 
 async def test_anchored_press_on_the_same_track_acts(rig: Rig) -> None:
@@ -239,7 +239,7 @@ async def test_normal_bodies_still_pass(rig: Rig) -> None:
 async def test_concurrent_state_reads_share_one_lookup(make_rig: Callable[..., Rig]) -> None:
     rig = make_rig(BATON_STATE_CACHE_SECONDS="1")
     rig.link()
-    rig.settings(target_playlist=("pl1", "My Shazam"))
+    rig.settings(target_playlist=("pl10000000000000000000", "My Shazam"))
     await rig.watch_get("state")  # warms the playlist snapshot cache
     rig.fake.calls.clear()
     rig.clock.t += 5
@@ -298,15 +298,25 @@ async def test_a_command_with_unexpected_spotify_json_answers_the_envelope(rig: 
     assert body["result"] == "error" and body["error"] == "spotify_error"
 
 
-@pytest.mark.parametrize("playlist_id", ["../me/player", "pl2?x=1", "pl2/../pl3", "a b"])
+@pytest.mark.parametrize(
+    "playlist_id",
+    [
+        "../me/player",
+        "pl20000000000000000000?x=1",
+        "pl20000000000000000000/../pl30000000000000000000",
+        "a b",
+    ],
+)
 async def test_settings_reject_a_malformed_playlist_id(rig: Rig, playlist_id: str) -> None:
     await rig.login_ui()
     rig.fake.calls.clear()
     resp = await rig.client.put("/api/ui/settings", json={"target_playlist_id": playlist_id})
     assert resp.status_code == 422
     assert rig.fake.calls == []
-    ok = await rig.client.put("/api/ui/settings", json={"target_playlist_id": "pl2"})
-    assert ok.status_code == 200 and ok.json()["target_playlist"]["id"] == "pl2"
+    ok = await rig.client.put(
+        "/api/ui/settings", json={"target_playlist_id": "pl20000000000000000000"}
+    )
+    assert ok.status_code == 200 and ok.json()["target_playlist"]["id"] == "pl20000000000000000000"
 
 
 def test_logs_carry_no_spotify_urls_or_oauth_codes() -> None:

@@ -84,6 +84,14 @@ class UserSettings:
 
 
 @dataclass(frozen=True)
+class VerifiedKey:
+    """The key a request authenticated with."""
+
+    id: str
+    scope: str
+
+
+@dataclass(frozen=True)
 class WatchKey:
     """Metadata of a watch key; the key itself is never stored."""
 
@@ -180,8 +188,8 @@ class Store:
         hint = plain[: len(KEY_PREFIX) + 4]
         return WatchKey(key_id, name, hint, now, None, None, scope), plain
 
-    def verify_watch_key(self, plain: str) -> str | None:
-        """Scope of an existing, not revoked key (None for any other); records the use."""
+    def verify_watch_key(self, plain: str) -> VerifiedKey | None:
+        """Id and scope of an existing, not revoked key (None for any other); records the use."""
         digest = hash_secret(plain)
         rows = self._exec(
             "SELECT id, key_hash, last_used_at, scope FROM watch_keys "
@@ -194,7 +202,7 @@ class Store:
         last = rows[0]["last_used_at"]
         if last is None or now - last > USED_TOUCH_SECONDS:
             self._exec("UPDATE watch_keys SET last_used_at = ? WHERE id = ?", (now, rows[0]["id"]))
-        return str(rows[0]["scope"])
+        return VerifiedKey(str(rows[0]["id"]), str(rows[0]["scope"]))
 
     def list_watch_keys(self) -> list[WatchKey]:
         """All keys, newest first."""

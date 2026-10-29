@@ -60,7 +60,7 @@ class RootMenuDelegate extends WatchUi.Menu2InputDelegate {
     }
 }
 
-// Shows the recent playlists once the server has answered.
+// Shows Liked Songs, the saved playlists and the recent playlists once the server has answered.
 class PlaylistsLoader {
     function onPlaylists(outcome as Outcome) as Void {
         var list = outcome.playlists;

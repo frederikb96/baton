@@ -15,7 +15,8 @@ TRACK_CHANGED = "track_changed"
 class ProviderError(Exception):
     """A failure with a stable error code and a short human readable message."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, retry_after: int | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.retry_after = retry_after
