@@ -123,9 +123,9 @@ class Controller {
         } else if (gesture == Gesture.PREVIOUS) {
             send(Command.previous());
         } else if (gesture == Gesture.LIKE) {
-            send(Command.like());
+            send(Command.like(trackId()));
         } else if (gesture == Gesture.PLAYLIST_ADD) {
-            send(Command.playlistAdd());
+            send(Command.playlistAdd(trackId()));
         } else if (gesture == Gesture.MENU) {
             openMenu();
         } else if (gesture == Gesture.EXIT) {
@@ -134,6 +134,11 @@ class Controller {
     }
 
     // ---- commands ----
+
+    function trackId() as String? {
+        var s = state;
+        return s == null ? null : s.trackId;
+    }
 
     function send(request as Request) as Void {
         showToast(request.pendingText);
@@ -149,6 +154,9 @@ class Controller {
         }
         if (!"busy".equals(outcome.code)) {
             _problem = Status.problemFor(outcome);
+        }
+        if ("track_changed".equals(outcome.code)) {
+            _api.pollSoon();
         }
         if (request.isCommand) {
             Haptics.play(Haptics.forResult(outcome.kind));

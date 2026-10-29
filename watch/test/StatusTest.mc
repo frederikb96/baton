@@ -45,7 +45,7 @@ function everyProblemHasWordsForTheScreen(logger as Logger) as Boolean {
 
 (:test)
 function toastNamesWhatHappened(logger as Logger) as Boolean {
-    var like = Command.like();
+    var like = Command.like(null);
     var ok = Outcome.fromResponse(200, okBody());
     var already = Outcome.fromResponse(200, {"result" => "already"});
     var rejected = Outcome.fromResponse(401, null);
@@ -55,6 +55,7 @@ function toastNamesWhatHappened(logger as Logger) as Boolean {
         && Status.toastFor(like, already).equals("Already liked")
         && Status.toastFor(like, rejected).equals("Key rejected")
         && Status.toastFor(like, noTarget).equals("No target playlist")
+        && Status.toastFor(like, Outcome.fromResponse(200, {"result" => "error", "error" => "track_changed"})).equals("Song changed")
         && Status.toastFor(like, Outcome.failed("no_phone")).equals("No phone")
         && Status.toastFor(Command.playPause(), ok).equals("Playing")
         && Status.toastFor(Command.playPause(), paused).equals("Paused")

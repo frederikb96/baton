@@ -11,6 +11,7 @@ class PlayerState {
     var liked as Boolean? = null;
     var inPlaylist as Boolean? = null;
     var playlistName as String? = null;
+    var trackId as String? = null;
 
     function initialize(d as Dictionary) {
         isPlaying = flag(d["is_playing"] as Object?) == true;
@@ -21,6 +22,7 @@ class PlayerState {
         liked = flag((d["liked"] as Object?));
         inPlaylist = flag((d["in_playlist"] as Object?));
         playlistName = text((d["playlist_name"] as Object?));
+        trackId = text((d["track_id"] as Object?));
     }
 
     // "Artist - Title", or whichever half is known

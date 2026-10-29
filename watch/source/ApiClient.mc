@@ -6,7 +6,7 @@ import Toybox.System;
 // and go before the next poll; a poll is only started when nothing else waits.
 class ApiClient {
     // the state is also refreshed by every command answer
-    const POLL_INTERVAL_MS = 8000;
+    const POLL_INTERVAL_MS = 10000;
     // no callback after this long: the call is given up and its late answer ignored
     const TIMEOUT_MS = 25000;
     const MAX_QUEUED = 3;

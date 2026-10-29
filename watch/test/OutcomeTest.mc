@@ -16,6 +16,7 @@ function okBody() as Dictionary {
             "liked" => true,
             "in_playlist" => false,
             "playlist_name" => "My Shazam",
+            "track_id" => "4uLU6hMCjMI75M1A2tKUQC",
             "device_name" => "Phone",
             "server_time_ms" => 1793299258493l
         }
@@ -29,7 +30,7 @@ function okAnswerCarriesTheState(logger as Logger) as Boolean {
     return o.kind == Result.OK && s != null && s.isPlaying && "Intro".equals(s.title)
         && "The xx".equals(s.artist) && s.progressMs == 1200 && s.durationMs == 127000
         && s.liked == true && s.inPlaylist == false && "My Shazam".equals(s.playlistName)
-        && "The xx - Intro".equals(s.headline());
+        && "The xx - Intro".equals(s.headline()) && "4uLU6hMCjMI75M1A2tKUQC".equals(s.trackId);
 }
 
 (:test)
@@ -87,13 +88,13 @@ function playlistsAnswerListsIdAndName(logger as Logger) as Boolean {
 
 (:test)
 function commandsUseTheContractPathsAndMethods(logger as Logger) as Boolean {
-    var like = Command.like();
+    var like = Command.like(null);
     var state = Command.state();
     var play = Command.playPlaylist("abc", "shuffle");
-    return like.path.equals("/api/watch/like") && like.method == Communications.HTTP_REQUEST_METHOD_POST && like.isCommand
-        && Command.unlike().path.equals("/api/watch/unlike")
-        && Command.playlistAdd().path.equals("/api/watch/playlist/add")
-        && Command.playlistRemove().path.equals("/api/watch/playlist/remove")
+    return like.path.equals("/api/watch/like") && Command.like("abc").path.equals("/api/watch/like?track=abc") && like.method == Communications.HTTP_REQUEST_METHOD_POST && like.isCommand
+        && Command.unlike("t1").path.equals("/api/watch/unlike?track=t1")
+        && Command.playlistAdd("t1").path.equals("/api/watch/playlist/add?track=t1")
+        && Command.playlistRemove(null).path.equals("/api/watch/playlist/remove")
         && Command.playPause().path.equals("/api/watch/play-pause")
         && Command.next().path.equals("/api/watch/next")
         && Command.previous().path.equals("/api/watch/previous")

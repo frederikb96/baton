@@ -102,6 +102,8 @@ module Status {
         var error = outcome.code;
         if ("no_target_playlist".equals(error)) {
             return "No target playlist";
+        } else if ("track_changed".equals(error)) {
+            return "Song changed";
         } else if ("spotify_rate_limited".equals(error)) {
             return "Rate limited";
         } else if ("spotify_auth".equals(error)) {

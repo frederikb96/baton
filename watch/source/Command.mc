@@ -44,20 +44,20 @@ module Command {
         return post("previous", "Previous...", "Previous", "Previous");
     }
 
-    function like() as Request {
-        return post("like", "Liking...", "Liked", "Already liked");
+    function like(trackId as String?) as Request {
+        return post(anchored("like", trackId), "Liking...", "Liked", "Already liked");
     }
 
-    function unlike() as Request {
-        return post("unlike", "Removing...", "Like removed", "Not liked");
+    function unlike(trackId as String?) as Request {
+        return post(anchored("unlike", trackId), "Removing...", "Like removed", "Not liked");
     }
 
-    function playlistAdd() as Request {
-        return post("playlist/add", "Adding...", "Added", "Already added");
+    function playlistAdd(trackId as String?) as Request {
+        return post(anchored("playlist/add", trackId), "Adding...", "Added", "Already added");
     }
 
-    function playlistRemove() as Request {
-        return post("playlist/remove", "Removing...", "Removed", "Not in playlist");
+    function playlistRemove(trackId as String?) as Request {
+        return post(anchored("playlist/remove", trackId), "Removing...", "Removed", "Not in playlist");
     }
 
     function playlists() as Request {
@@ -67,6 +67,11 @@ module Command {
     // mode: normal, shuffle or smart
     function playPlaylist(id as String, mode as String) as Request {
         return post("playlists/" + id + "/play?mode=" + mode, "Starting...", "", "");
+    }
+
+    // The id of the track the screen showed: the server refuses the action when another one plays now.
+    function anchored(path as String, trackId as String?) as String {
+        return trackId == null ? path : path + "?track=" + trackId;
     }
 
     function post(path as String, pending as String, ok as String, already as String) as Request {

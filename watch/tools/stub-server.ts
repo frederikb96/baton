@@ -61,6 +61,7 @@ function state() {
   const t = tracks[index]
   return {
     is_playing: playing,
+    track_id: `track${index}`,
     title: t.title,
     artist: t.artist,
     progress_ms: position(),
@@ -78,7 +79,8 @@ const reply = (result: 'ok' | 'already' | 'error', extra: Record<string, unknown
 
 const fail = (error: string, message: string) => reply('error', { error, message })
 
-function handle(method: string, path: string, mode: string | null) {
+function handle(method: string, path: string, mode: string | null, track: string | null) {
+  if (track !== null && track !== `track${index}`) return reply('error', { error: 'track_changed', message: 'The song changed', state: state() })
   if (scenario === 'asleep') return fail('no_device', 'No active device')
   if (scenario === 'auth') return fail('spotify_auth', 'Spotify login expired')
   if (scenario === 'notrack') return fail('no_track', 'Nothing playing')
@@ -138,7 +140,7 @@ Bun.serve({
     const authOk = auth === `Bearer ${key}`
     console.log(`${new Date().toISOString()} ${req.method} ${url.pathname}${url.search} auth=${authOk ? 'ok' : 'bad'} type=${req.headers.get('content-type') ?? '-'}`)
     if (!authOk || scenario === 'rejected') return new Response('{"detail":"invalid key"}', { status: 401, headers: { 'content-type': 'application/json' } })
-    return handle(req.method, url.pathname, url.searchParams.get('mode'))
+    return handle(req.method, url.pathname, url.searchParams.get('mode'), url.searchParams.get('track'))
   },
 })
 console.log(`stub listening on :${port}, scenario ${scenario}`)

@@ -20,6 +20,8 @@ Every press is safe to repeat: like and playlist add never toggle, and a command
 
 The menu opens on *Remove like*, so Up-hold then Start removes the like; the second entry removes the track from the target playlist, the third lists recently played playlists to start normally, shuffled or with smart shuffle (plain shuffle where Spotify has no smart shuffle). Choosing an entry returns to the main screen; an untouched menu closes after 8 seconds.
 
+Like, add and remove carry the id of the track the screen showed; if another song plays by the time the server gets the request it refuses ("Song changed", error vibration) and the state is refreshed.
+
 Actions fire on release of a press shorter than 0.6 s. Longer presses, the touch screen and the watch's own hold shortcuts (voice control, music controls, recent apps) trigger nothing in the app. Up and Down wait 0.4 s for a second press before acting.
 
 ## Vibration
@@ -37,7 +39,7 @@ The server's answer decides the pattern, not the press:
 
 Progress ring around the edge, title and artist in the middle, the time at the bottom, a hint glyph beside each button (pause/play at Start, skip at Down, heart and menu dots at Up; the heart is red for a liked track) and the target playlist, green when the track is in it. The last command's result shows for a moment in the same place. Standing problems replace the track: no phone, no connection to the server, device asleep (no active Spotify device), Spotify login expired, watch key rejected, nothing playing.
 
-The app polls the server every 8 seconds and every command answer carries the fresh state; the ring advances locally in between. At most one request is in flight. With no phone connected nothing is sent.
+The app polls the server every 10 seconds and every command answer carries the fresh state; the ring advances locally in between. At most one request is in flight. With no phone connected nothing is sent.
 
 ## Launching
 

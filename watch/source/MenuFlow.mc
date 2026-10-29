@@ -33,9 +33,9 @@ class RootMenuDelegate extends WatchUi.Menu2InputDelegate {
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
         if (id == :unlike) {
-            MenuFlow.finish(Command.unlike());
+            MenuFlow.finish(Command.unlike(MenuFlow.controller().trackId()));
         } else if (id == :remove) {
-            MenuFlow.finish(Command.playlistRemove());
+            MenuFlow.finish(Command.playlistRemove(MenuFlow.controller().trackId()));
         } else if (id == :playlists) {
             MenuFlow.controller().requestPlaylists(new PlaylistsLoader().method(:onPlaylists));
             item.setSubLabel("Loading...");
