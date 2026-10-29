@@ -178,6 +178,7 @@ async function loadStatus() {
   $("sp-login").textContent = sp.linked ? "Log in again" : "Log in with Spotify";
   $("sp-disconnect").hidden = !sp.linked;
   settings = result.data.settings;
+  renderSaved();
   return result.data;
 }
 
@@ -231,7 +232,6 @@ async function loadRecent() {
     list.append(el("li", result.data && result.data.message ? result.data.message : "Not available.", "muted"));
     return;
   }
-  if (result.data.playlists.length === 0) list.append(el("li", "Nothing played from a playlist recently.", "muted"));
   for (const playlist of result.data.playlists) {
     const item = el("li");
     item.append(el("span", playlist.name));
@@ -243,6 +243,54 @@ async function loadRecent() {
       item.append(button);
     }
     list.append(item);
+  }
+}
+
+// saved playlists -----------------------------------------------------------------------
+
+// The id out of a playlist link, a spotify: URI or a bare id; null when it is none of them.
+function playlistId(text) {
+  const match = text.trim().match(/^(?:https?:\/\/open\.spotify\.com\/(?:[\w-]+\/)?playlist\/|spotify:(?:user:[^:]+:)?playlist:)?([A-Za-z0-9]{1,64})(?:[?/#].*)?$/);
+  return match ? match[1] : null;
+}
+
+function renderSaved() {
+  const list = $("saved");
+  list.replaceChildren();
+  const saved = settings.saved_playlists || [];
+  if (saved.length === 0) list.append(el("li", "None yet.", "muted"));
+  for (const playlist of saved) {
+    const item = el("li");
+    item.append(el("span", playlist.name));
+    const remove = el("button", "Remove");
+    remove.addEventListener("click", () => saveSaved(saved.filter((p) => p.id !== playlist.id)));
+    item.append(remove);
+    list.append(item);
+  }
+}
+
+async function saveSaved(playlists) {
+  const result = await api("PUT", "/settings", { saved_playlists: playlists });
+  $("saved-msg").textContent = result.ok ? "" : detail(result);
+  if (!result.ok) return false;
+  settings = result.data;
+  renderSaved();
+  await loadRecent();
+  return true;
+}
+
+async function addSaved(event) {
+  event.preventDefault();
+  const id = playlistId($("saved-link").value);
+  if (!id) {
+    $("saved-msg").textContent = "That is not a Spotify playlist link.";
+    return;
+  }
+  const name = $("saved-name").value.trim();
+  const others = (settings.saved_playlists || []).filter((p) => p.id !== id);
+  if (await saveSaved([...others, { id, name }])) {
+    $("saved-name").value = "";
+    $("saved-link").value = "";
   }
 }
 
@@ -339,6 +387,7 @@ for (const id of ["device-select", "set-device"]) {
   $(id).addEventListener("focus", loadDevices);
 }
 $("set-save").addEventListener("click", saveSettings);
+$("saved-form").addEventListener("submit", addSaved);
 $("key-form").addEventListener("submit", createKey);
 $("sp-login").addEventListener("click", async () => {
   const response = await fetch("/auth/spotify/login", {

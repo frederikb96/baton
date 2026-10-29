@@ -151,3 +151,54 @@ async def test_only_the_hash_of_a_key_is_stored(rig: Rig, tmp_path: Path) -> Non
 async def test_key_name_is_required(rig: Rig) -> None:
     await rig.login_ui()
     assert (await rig.client.post("/api/ui/keys", json={"name": ""})).status_code == 422
+
+
+async def test_saved_playlists_round_trip_and_survive_other_changes(rig: Rig) -> None:
+    await rig.login_ui()
+    saved = [
+        {"id": "37i9dQZF1EXAMPLEONE1", "name": " Daily Mix 1 "},
+        {"id": "5Pplaylist", "name": "Feel Good Indie"},
+        {"id": "5Pplaylist", "name": "Feel Good Indie again"},
+    ]
+    resp = await rig.client.put("/api/ui/settings", json={"saved_playlists": saved})
+    assert resp.status_code == 200
+    assert resp.json()["saved_playlists"] == [
+        {"id": "37i9dQZF1EXAMPLEONE1", "name": "Daily Mix 1"},
+        {"id": "5Pplaylist", "name": "Feel Good Indie again"},
+    ]
+    other = await rig.client.put("/api/ui/settings", json={"market": "de"})
+    assert len(other.json()["saved_playlists"]) == 2
+    assert len((await rig.client.get("/api/ui/status")).json()["settings"]["saved_playlists"]) == 2
+    names = [p["name"] for p in (await rig.watch_get("playlists")).json()["playlists"]]
+    assert names[:3] == ["Liked Songs", "Daily Mix 1", "Feel Good Indie again"]
+    cleared = await rig.client.put("/api/ui/settings", json={"saved_playlists": []})
+    assert cleared.json()["saved_playlists"] == []
+
+
+async def test_saved_playlists_are_validated(rig: Rig) -> None:
+    await rig.login_ui()
+    for bad in (
+        [{"id": "bad..id", "name": "x"}],
+        [{"id": "abc", "name": ""}],
+        [{"id": f"p{i}", "name": "x"} for i in range(11)],
+    ):
+        resp = await rig.client.put("/api/ui/settings", json={"saved_playlists": bad})
+        assert resp.status_code == 422
+    assert app_state_of(rig.app).store.get_settings().saved_playlists == ()
+
+
+async def test_settings_stored_before_saved_playlists_existed_still_load(rig: Rig) -> None:
+    state = app_state_of(rig.app)
+    state.store._exec(  # noqa: SLF001
+        "UPDATE kv SET value = ? WHERE key = 'settings'",
+        ('{"target_playlist": null, "default_device": null, "market": null}',),
+    )
+    assert state.store.get_settings().saved_playlists == ()
+
+
+async def test_page_offers_saved_playlists(rig: Rig) -> None:
+    await rig.login_ui()
+    page = (await rig.client.get("/")).text
+    script = (await rig.client.get("/static/app.js")).text
+    assert 'id="saved-form"' in page and 'id="saved"' in page
+    assert "saved_playlists" in script

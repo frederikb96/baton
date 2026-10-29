@@ -13,13 +13,20 @@ from typing import Any, TypeVar
 
 from baton import errors
 from baton.db import Store
-from baton.providers.base import Device, Playback, Playlist, Provider
+from baton.providers.base import Device, Playback, Playlist, Provider, RecentContext
 
 OK = "ok"
 ALREADY = "already"
 ERROR = "error"
 RESTART_THRESHOLD_MS = 5000
 MAX_RECENT_PLAYLISTS = 15
+# Saved playlists (named by hand) and the whole list the watch gets; its answer must stay small.
+MAX_SAVED = 10
+MAX_LISTED = 20
+LIKED_ID = "liked"
+LIKED_NAME = "Liked Songs"
+# Ids of personal mixes and editorial lists; Spotify does not let a development-mode app read them.
+SPOTIFY_OWNED_PREFIX = "37i9dQZF1"
 # Recently played items Spotify returns at most; names are looked up until enough resolve.
 RECENT_CANDIDATES = 50
 UNAVAILABLE_SECONDS = 3600
@@ -354,24 +361,39 @@ class Controller:
         self._names[playlist_id] = name
         return name
 
+    async def _recent_name(self, recent: RecentContext) -> str | None:
+        """Name of a recent playlist; an unreadable Spotify-owned one is labelled by a track."""
+        name = await self._playlist_name(recent.id)
+        if name is None and recent.id.startswith(SPOTIFY_OWNED_PREFIX):
+            return f"Spotify mix ({recent.track})" if recent.track else "Spotify mix"
+        return name
+
     async def recent_playlists(self) -> list[Playlist]:
         """Recently played playlists that can be named, most recent first, cached briefly."""
         if self._recent and self._now() - self._recent[0] < self._recent_ttl:
             return self._recent[1]
         playlists: list[Playlist] = []
-        for playlist_id in await self._provider.recent_playlist_ids(RECENT_CANDIDATES):
-            name = await self._playlist_name(playlist_id)
+        for recent in await self._provider.recent_playlist_contexts(RECENT_CANDIDATES):
+            name = await self._recent_name(recent)
             if name is not None:
-                playlists.append(Playlist(playlist_id, name))
+                playlists.append(Playlist(recent.id, name))
             if len(playlists) >= MAX_RECENT_PLAYLISTS:
                 break
         self._recent = (self._now(), playlists)
         return playlists
 
+    async def listed_playlists(self) -> list[Playlist]:
+        """Liked Songs, the saved playlists, then the recent ones, without repeats."""
+        listed = [Playlist(LIKED_ID, LIKED_NAME)]
+        listed += [Playlist(p.id, p.name) for p in self._store.get_settings().saved_playlists]
+        taken = {p.id for p in listed}
+        listed += [p for p in await self.recent_playlists() if p.id not in taken]
+        return listed[:MAX_LISTED]
+
     @guarded
     async def playlists(self) -> Reply:
-        """Reply carrying the recent playlists."""
-        items = [{"id": p.id, "name": p.name} for p in await self.recent_playlists()]
+        """Reply carrying the playlists to start from."""
+        items = [{"id": p.id, "name": p.name} for p in await self.listed_playlists()]
         return Reply(OK, extra={"playlists": items})
 
     @serialized
@@ -384,8 +406,10 @@ class Controller:
         device_id = None
         if pb is None or pb.device is None:
             device_id = (await self._default_device()).id
-        await self._provider.start_playlist(
-            playlist_id, shuffle=mode != "normal", device_id=device_id
-        )
+        shuffle = mode != "normal"
+        if playlist_id == LIKED_ID:
+            await self._provider.start_liked(shuffle=shuffle, device_id=device_id)
+        else:
+            await self._provider.start_playlist(playlist_id, shuffle=shuffle, device_id=device_id)
         state = await self._fresh()
         return Reply(OK, message=SMART_FALLBACK_MESSAGE if mode == "smart" else None, state=state)

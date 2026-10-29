@@ -76,6 +76,7 @@ class UserSettings:
     target_playlist: Ref | None = None
     default_device: Ref | None = None
     market: str | None = None
+    saved_playlists: tuple[Ref, ...] = ()
 
     def to_json(self) -> dict[str, object]:
         """Plain dict for the API."""
@@ -149,7 +150,10 @@ class Store:
             item = data.get(name)
             return Ref(item["id"], item["name"]) if item else None
 
-        return UserSettings(ref("target_playlist"), ref("default_device"), data.get("market"))
+        saved = tuple(Ref(item["id"], item["name"]) for item in data.get("saved_playlists") or [])
+        return UserSettings(
+            ref("target_playlist"), ref("default_device"), data.get("market"), saved
+        )
 
     def save_settings(self, settings: UserSettings) -> None:
         """Persist the settings."""

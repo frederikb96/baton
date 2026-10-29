@@ -10,10 +10,20 @@ from typing import Any
 import httpx
 
 from baton import errors
-from baton.providers.base import Device, Playback, Playlist, Provider, RelayResponse, Track
+from baton.providers.base import (
+    Device,
+    Playback,
+    Playlist,
+    Provider,
+    RecentContext,
+    RelayResponse,
+    Track,
+)
 from baton.providers.spotify_accounts import SpotifyAccounts
 
 PAGE_SIZE = 50
+# Tracks started directly when Spotify refuses the Liked Songs context.
+LIKED_FALLBACK_TRACKS = 50
 MAX_PAGES = 40
 # Spotify caps a playlist at 10000 items; the membership scan must be able to read all of them.
 MEMBER_MAX_PAGES = 220
@@ -62,6 +72,7 @@ class SpotifyProvider(Provider):
         self._now = now
         self._rate_limited_until = 0.0
         self._playlist_cache: dict[str, tuple[str, set[str]]] = {}
+        self._user_id: str | None = None
 
     # transport
 
@@ -165,7 +176,13 @@ class SpotifyProvider(Provider):
             return errors.ProviderError(
                 errors.SPOTIFY_RATE_LIMITED, f"Spotify rate limit reached.{suffix}"
             )
-        if reason == "NO_ACTIVE_DEVICE" or (status == 404 and path.startswith(PLAYER_PATH)):
+        # A 404 on a player call means no device, unless Spotify's own message names another cause.
+        no_device_404 = (
+            status == 404
+            and path.startswith(PLAYER_PATH)
+            and (not message or "device" in message.lower())
+        )
+        if reason == "NO_ACTIVE_DEVICE" or no_device_404:
             return errors.ProviderError(errors.NO_DEVICE, "No active Spotify device.")
         if status == 403:
             detail = f" ({message})" if message else ""
@@ -335,34 +352,62 @@ class SpotifyProvider(Provider):
             offset += PAGE_SIZE
         return result
 
-    async def recent_playlist_ids(self, limit: int) -> list[str]:
-        """Ids of recently played playlists, most recent first, without duplicates."""
+    async def recent_playlist_contexts(self, limit: int) -> list[RecentContext]:
+        """Recently played playlists, most recent first, without duplicates."""
         resp = await self._request(
             "GET", f"{PLAYER_PATH}/recently-played", params={"limit": PAGE_SIZE}
         )
-        seen: list[str] = []
+        seen: dict[str, str] = {}
         for entry in resp.json().get("items", []):
             context = (entry or {}).get("context") or {}
             match = PLAYLIST_CONTEXT.match(str(context.get("uri") or ""))
             if context.get("type") != "playlist" or not match:
                 continue
             if match[1] not in seen:
-                seen.append(match[1])
+                seen[match[1]] = str(((entry or {}).get("track") or {}).get("name") or "")
             if len(seen) >= limit:
                 break
-        return seen
+        return [RecentContext(playlist_id, track) for playlist_id, track in seen.items()]
+
+    async def _shuffle_then_play(
+        self, body: dict[str, Any], *, shuffle: bool, device_id: str | None
+    ) -> None:
+        device = {"device_id": device_id} if device_id else {}
+        await self._request(
+            "PUT", f"{PLAYER_PATH}/shuffle", params={"state": str(shuffle).lower(), **device}
+        )
+        await self._request("PUT", f"{PLAYER_PATH}/play", params=device, json=body)
 
     async def start_playlist(
         self, playlist_id: str, *, shuffle: bool, device_id: str | None
     ) -> None:
         """Start a playlist with the given shuffle state, optionally on a device."""
-        device = {"device_id": device_id} if device_id else {}
-        await self._request(
-            "PUT", f"{PLAYER_PATH}/shuffle", params={"state": str(shuffle).lower(), **device}
+        await self._shuffle_then_play(
+            {"context_uri": f"spotify:playlist:{playlist_id}"},
+            shuffle=shuffle,
+            device_id=device_id,
         )
-        await self._request(
-            "PUT",
-            f"{PLAYER_PATH}/play",
-            params=device,
-            json={"context_uri": f"spotify:playlist:{playlist_id}"},
-        )
+
+    async def _own_id(self) -> str:
+        if self._user_id is None:
+            self._user_id = str((await self._request("GET", "/me")).json()["id"])
+        return self._user_id
+
+    async def start_liked(self, *, shuffle: bool, device_id: str | None) -> None:
+        """Start Liked Songs: its collection context, else the newest liked tracks as a list."""
+        context = {"context_uri": f"spotify:user:{await self._own_id()}:collection"}
+        try:
+            await self._shuffle_then_play(context, shuffle=shuffle, device_id=device_id)
+            return
+        except errors.ProviderError as exc:
+            if exc.code != errors.SPOTIFY_ERROR:
+                raise
+        resp = await self._request("GET", "/me/tracks", params={"limit": LIKED_FALLBACK_TRACKS})
+        uris = [
+            item["track"]["uri"]
+            for item in resp.json().get("items", [])
+            if (item or {}).get("track") and not item["track"].get("is_local")
+        ]
+        if not uris:
+            raise errors.ProviderError(errors.SPOTIFY_ERROR, "There are no liked songs to play.")
+        await self._shuffle_then_play({"uris": uris}, shuffle=shuffle, device_id=device_id)

@@ -58,6 +58,14 @@ class Playlist:
 
 
 @dataclass(frozen=True)
+class RecentContext:
+    """A playlist something was recently played from, with one of those tracks."""
+
+    id: str
+    track: str
+
+
+@dataclass(frozen=True)
 class RelayResponse:
     """The answer of the source's API to a relayed call."""
 
@@ -135,14 +143,18 @@ class Provider(ABC):
         """The user's own and followed playlists."""
 
     @abstractmethod
-    async def recent_playlist_ids(self, limit: int) -> list[str]:
-        """Ids of recently played playlists, most recent first, without duplicates."""
+    async def recent_playlist_contexts(self, limit: int) -> list[RecentContext]:
+        """Recently played playlists, most recent first, without duplicates."""
 
     @abstractmethod
     async def start_playlist(
         self, playlist_id: str, *, shuffle: bool, device_id: str | None
     ) -> None:
         """Start a playlist with the given shuffle state, optionally on a device."""
+
+    @abstractmethod
+    async def start_liked(self, *, shuffle: bool, device_id: str | None) -> None:
+        """Start Liked Songs with the given shuffle state, optionally on a device."""
 
     @abstractmethod
     async def relay(

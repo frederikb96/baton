@@ -273,6 +273,11 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
         if raw:
             body = await request.json()
             context = body.get("context_uri")
+            if body.get("uris"):
+                fake.context = None
+                fake.index = 0
+                fake.progress_ms = 0
+                fake.queue = list(body["uris"])
             if context:
                 fake.context = context
                 fake.index = 0
@@ -317,7 +322,7 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
     async def recent() -> dict[str, Any]:
         items: list[dict[str, Any]] = [
             {
-                "track": {"uri": "spotify:track:t0"},
+                "track": {"uri": "spotify:track:t0", "name": "Blue Monday"},
                 "context": {
                     "type": "playlist",
                     "uri": pid if pid.startswith("spotify:") else f"spotify:playlist:{pid}",
@@ -334,6 +339,15 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
             },
         )
         return {"items": items}
+
+    @app.get("/v1/me")
+    async def me() -> dict[str, Any]:
+        return {"id": "alex", "display_name": "Alex"}
+
+    @app.get("/v1/me/tracks")
+    async def liked_tracks(limit: int = 20) -> dict[str, Any]:
+        newest_first = reversed(fake.liked)
+        return {"items": [{"track": {"uri": uri}} for uri in list(newest_first)[:limit]]}
 
     @app.get("/v1/me/library/contains")
     async def contains(uris: str) -> list[bool]:

@@ -89,7 +89,7 @@ The vibration patterns, the screen and how the app is launched are described in 
   <img src="docs/images/web.png" alt="The web page at desktop width and at phone width" width="85%">
 </p>
 
-The page shows the same state as the watch, switches the playback device, starts recent playlists, sets the target playlist and the default device, creates and revokes keys (watch keys for the watch, agent keys that also reach the Spotify Web API through the server) and shows how many days the Spotify login has left. The device lists follow Spotify while the page is open, so a phone appears once its Spotify app is running. Spotify logins last six months and can't be extended, so you log in again from here now and then.
+The page shows the same state as the watch, switches the playback device, starts Liked Songs, saved and recent playlists, sets the target playlist and the default device, creates and revokes keys (watch keys for the watch, agent keys that also reach the Spotify Web API through the server) and shows how many days the Spotify login has left. The device lists follow Spotify while the page is open, so a phone appears once its Spotify app is running. Spotify logins last six months and can't be extended, so you log in again from here now and then.
 
 ## Docs
 

@@ -20,7 +20,7 @@ from baton.auth import (
     require_ui,
     session_valid,
 )
-from baton.controller import PLAYLIST_ID_PATTERN
+from baton.controller import MAX_SAVED, PLAYLIST_ID_PATTERN
 from baton.db import Ref
 from baton.routes_watch import add_actions
 
@@ -49,12 +49,20 @@ class LoginBody(BaseModel):
     key: str = Field(max_length=1024)
 
 
+class SavedPlaylistBody(BaseModel):
+    """A playlist listed by name whatever Spotify says about it."""
+
+    id: str = Field(pattern=f"^{PLAYLIST_ID_PATTERN}$")
+    name: str = Field(min_length=1, max_length=80)
+
+
 class SettingsBody(BaseModel):
     """Settings update; only the fields present are changed, null clears."""
 
     target_playlist_id: str | None = Field(default=None, pattern=f"^({PLAYLIST_ID_PATTERN})?$")
     default_device_id: str | None = None
     market: str | None = Field(default=None, pattern=r"^([A-Za-z]{2}|from_token)?$")
+    saved_playlists: list[SavedPlaylistBody] | None = Field(default=None, max_length=MAX_SAVED)
 
 
 class KeyBody(BaseModel):
@@ -240,7 +248,11 @@ async def put_settings(request: Request, body: SettingsBody) -> dict[str, Any]:
         market = (body.market or "").upper() or None
         if market == "FROM_TOKEN":
             market = "from_token"
-    updated = type(current)(target, device, market)
+    saved = current.saved_playlists
+    if "saved_playlists" in changed:
+        entries = body.saved_playlists or []
+        saved = tuple({e.id: Ref(e.id, e.name.strip()) for e in entries}.values())
+    updated = type(current)(target, device, market, saved)
     state.store.save_settings(updated)
     return updated.to_json()
 

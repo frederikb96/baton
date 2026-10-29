@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from baton.db import Ref
 from tests.conftest import Rig
 
 ENVELOPE_KEYS = {"result", "error", "message", "state"}
@@ -304,10 +305,22 @@ async def test_play_playlist_bad_request(rig: Rig, path: str) -> None:
     assert (await call(rig, "POST", path))["error"] == "bad_request"
 
 
+LIKED = {"id": "liked", "name": "Liked Songs"}
+
+
+async def recent_entries(rig: Rig) -> list[dict[str, str]]:
+    """The playlists answer without its leading Liked Songs entry."""
+    body = await call(rig, "GET", "playlists")
+    assert body["playlists"][0] == LIKED
+    entries: list[dict[str, str]] = body["playlists"][1:]
+    return entries
+
+
 async def test_recent_playlists_dedupe_cache_and_limit(rig: Rig) -> None:
     body = await call(rig, "GET", "playlists")
     assert body["result"] == "ok" and body["state"] is None
     assert body["playlists"] == [
+        LIKED,
         {"id": "pl2", "name": "Cycling"},
         {"id": "pl1", "name": "My Shazam"},
         {"id": "pl3", "name": "Sunday morning"},
@@ -317,8 +330,7 @@ async def test_recent_playlists_dedupe_cache_and_limit(rig: Rig) -> None:
     assert len(rig.fake.calls) == calls
     rig.clock.t += 121
     rig.fake.recent_contexts = ["pl3"]
-    again = await call(rig, "GET", "playlists")
-    assert [p["id"] for p in again["playlists"]] == ["pl3"]
+    assert [p["id"] for p in await recent_entries(rig)] == ["pl3"]
     assert len([c for c in rig.fake.calls if c[1] == "/v1/playlists/pl3"]) == 1
 
 
@@ -328,13 +340,12 @@ async def test_recent_playlists_limit_is_fifteen(rig: Rig) -> None:
 
         rig.fake.playlists[f"p{i}"] = FakePlaylist(f"p{i}", f"List {i}")
     rig.fake.recent_contexts = [f"p{i}" for i in range(30)]
-    assert len((await call(rig, "GET", "playlists"))["playlists"]) == 15
+    assert len(await recent_entries(rig)) == 15
 
 
 async def test_recent_playlists_leave_out_ones_that_cannot_be_named(rig: Rig) -> None:
     rig.fake.recent_contexts = ["editorial1", "pl1", "editorial2"]
-    body = await call(rig, "GET", "playlists")
-    assert body["playlists"] == [{"id": "pl1", "name": "My Shazam"}]
+    assert await recent_entries(rig) == [{"id": "pl1", "name": "My Shazam"}]
     asked = len(rig.fake.calls_to("GET", "/v1/playlists/editorial1"))
     rig.clock.t += 121
     await call(rig, "GET", "playlists")
@@ -350,8 +361,7 @@ async def test_recent_playlists_fill_up_past_unnamable_ones(rig: Rig) -> None:
     for i in range(20):
         rig.fake.playlists[f"p{i}"] = FakePlaylist(f"p{i}", f"List {i}")
     rig.fake.recent_contexts = ["gone1", "gone2", *[f"p{i}" for i in range(20)]]
-    body = await call(rig, "GET", "playlists")
-    assert [p["id"] for p in body["playlists"]] == [f"p{i}" for i in range(15)]
+    assert [p["id"] for p in await recent_entries(rig)] == [f"p{i}" for i in range(15)]
 
 
 async def test_recent_playlist_played_with_smart_shuffle_is_the_same_playlist(rig: Rig) -> None:
@@ -362,12 +372,84 @@ async def test_recent_playlist_played_with_smart_shuffle_is_the_same_playlist(ri
         "pl2",
         "pl3",
     ]
-    body = await call(rig, "GET", "playlists")
-    assert body["playlists"] == [
+    assert await recent_entries(rig) == [
         {"id": "pl2", "name": "Cycling"},
         {"id": "pl3", "name": "Sunday morning"},
     ]
     assert len(rig.fake.calls_to("GET", "/v1/playlists/pl2")) == 1
+
+
+async def test_unreadable_spotify_mix_is_listed_with_a_track_as_its_label(rig: Rig) -> None:
+    rig.fake.recent_contexts = ["37i9dQZF1EXAMPLEONE1", "pl1", "37i9dQZF1EXAMPLETWO2"]
+    assert await recent_entries(rig) == [
+        {"id": "37i9dQZF1EXAMPLEONE1", "name": "Spotify mix (Blue Monday)"},
+        {"id": "pl1", "name": "My Shazam"},
+        {"id": "37i9dQZF1EXAMPLETWO2", "name": "Spotify mix (Blue Monday)"},
+    ]
+
+
+async def test_saved_playlists_come_after_liked_songs_and_name_mixes(rig: Rig) -> None:
+    rig.fake.recent_contexts = ["37i9dQZF1EXAMPLEONE1", "pl1"]
+    rig.settings(saved_playlists=(Ref("37i9dQZF1EXAMPLEONE1", "Daily Mix 1"),))
+    body = await call(rig, "GET", "playlists")
+    assert body["playlists"] == [
+        LIKED,
+        {"id": "37i9dQZF1EXAMPLEONE1", "name": "Daily Mix 1"},
+        {"id": "pl1", "name": "My Shazam"},
+    ]
+
+
+async def test_list_is_capped_with_liked_songs_and_saved_playlists_first(rig: Rig) -> None:
+    from tests.fake_spotify import FakePlaylist
+
+    for i in range(30):
+        rig.fake.playlists[f"p{i}"] = FakePlaylist(f"p{i}", f"List {i}")
+    rig.fake.recent_contexts = [f"p{i}" for i in range(30)]
+    rig.settings(saved_playlists=tuple(Ref(f"s{i}", f"Saved {i}") for i in range(10)))
+    ids = [p["id"] for p in (await call(rig, "GET", "playlists"))["playlists"]]
+    assert len(ids) == 20
+    assert ids[:11] == ["liked", *[f"s{i}" for i in range(10)]]
+
+
+@pytest.mark.parametrize(("mode", "shuffled"), [("normal", False), ("shuffle", True)])
+async def test_liked_songs_start_by_their_collection_context(
+    rig: Rig, mode: str, shuffled: bool
+) -> None:
+    rig.fake.shuffle = not shuffled
+    body = await call(rig, "POST", f"playlists/liked/play?mode={mode}")
+    assert body["result"] == "ok"
+    assert rig.fake.context == "spotify:user:alex:collection"
+    assert rig.fake.shuffle is shuffled
+    assert not rig.fake.calls_to("GET", "/v1/me/tracks")
+
+
+async def test_liked_songs_fall_back_to_the_newest_liked_tracks(rig: Rig) -> None:
+    rig.fake.liked = [T2, T0, T1]
+    rig.fake.fail(
+        "PUT /v1/me/player/play", 404, {"error": {"status": 404, "message": "Context not found"}}
+    )
+    body = await call(rig, "POST", "playlists/liked/play?mode=shuffle")
+    assert body["result"] == "ok"
+    assert rig.fake.queue == [T1, T0, T2]
+    assert rig.fake.shuffle is True
+
+
+async def test_liked_songs_refusal_is_not_taken_for_a_missing_device(rig: Rig) -> None:
+    rig.fake.liked = []
+    rig.fake.fail(
+        "PUT /v1/me/player/play",
+        404,
+        {"error": {"status": 404, "message": "Context not found"}},
+        times=2,
+    )
+    body = await call(rig, "POST", "playlists/liked/play")
+    assert body["error"] == "spotify_error" and "no liked songs" in body["message"]
+
+
+async def test_liked_songs_without_a_device_still_report_it(rig: Rig) -> None:
+    rig.fake.active_device = None
+    rig.fake.devices = []
+    assert (await call(rig, "POST", "playlists/liked/play"))["error"] == "no_device"
 
 
 # authentication -------------------------------------------------------------------------
