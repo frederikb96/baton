@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS spotify_auth (
 """
 
 SETTINGS_KEY = "settings"
+UI_KEY_FINGERPRINT = "ui_key_fingerprint"
 KEY_PREFIX = "bk_"
 USED_TOUCH_SECONDS = 60
 
@@ -38,6 +39,22 @@ USED_TOUCH_SECONDS = 60
 def hash_secret(value: str) -> str:
     """Hex SHA-256 of a high-entropy random secret (keys, session tokens)."""
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def key_fingerprint(ui_key: str | None) -> str:
+    """Salted, slow hash of the UI key, so the stored value does not reveal a human-chosen key."""
+    salt = secrets.token_bytes(16)
+    return salt.hex() + "$" + _scrypt(ui_key, salt)
+
+
+def key_fingerprint_matches(ui_key: str | None, stored: str) -> bool:
+    """Whether ``stored`` is the fingerprint of ``ui_key``."""
+    salt, _, digest = stored.partition("$")
+    return hmac.compare_digest(_scrypt(ui_key, bytes.fromhex(salt)), digest)
+
+
+def _scrypt(ui_key: str | None, salt: bytes) -> str:
+    return hashlib.scrypt((ui_key or "").encode(), salt=salt, n=2**14, r=8, p=1).hex()
 
 
 @dataclass(frozen=True)
@@ -181,6 +198,20 @@ class Store:
             return cur.rowcount > 0
 
     # UI sessions
+
+    def sync_ui_key(self, ui_key: str | None) -> None:
+        """Drop every session when the UI key differs from the one the sessions were issued for."""
+        with self._lock:
+            rows = self._exec("SELECT value FROM kv WHERE key = ?", (UI_KEY_FINGERPRINT,))
+            stored = rows[0]["value"] if rows else None
+            if stored is not None and key_fingerprint_matches(ui_key, stored):
+                return
+            self._exec("DELETE FROM sessions")
+            self._exec(
+                "INSERT INTO kv (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (UI_KEY_FINGERPRINT, key_fingerprint(ui_key)),
+            )
 
     def create_session(self, lifetime_seconds: float) -> str:
         """Create a session and return its token."""

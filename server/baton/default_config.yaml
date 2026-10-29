@@ -21,9 +21,10 @@ spotify_client_secret: null
 # Directory holding the SQLite database.
 data_dir: /data
 
-# Listen address of the built-in HTTP server.
-host: 0.0.0.0
-port: 8080
+# Listen address of the built-in HTTP server. The names avoid BATON_HOST and BATON_PORT,
+# which Kubernetes service links fill with unrelated values for a Service named baton.
+listen_host: 0.0.0.0
+listen_port: 8080
 log_level: info
 
 # Take the client address for throttling from the last X-Forwarded-For entry.
@@ -42,10 +43,15 @@ spotify_accounts_url: https://accounts.spotify.com
 # Pause after a skip before the fresh playback state is read, in milliseconds.
 settle_delay_ms: 300
 
-# Failed key attempts per client within the window lock that client out.
+# Failed web page login attempts per client within the window lock that client out.
+# Failed watch keys are only slowed down; a valid watch key is never locked out.
 throttle_max_failures: 10
 throttle_window_seconds: 300
 throttle_lockout_seconds: 300
 
 # How long the recent playlists list is reused, in seconds.
 recent_playlists_cache_seconds: 120
+
+# How long a playback state read is shared by concurrent and immediately following requests,
+# in seconds. 0 turns the reuse off; reads that overlap are still merged into one.
+state_cache_seconds: 1

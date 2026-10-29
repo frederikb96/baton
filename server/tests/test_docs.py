@@ -10,6 +10,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 ENV_NAME = re.compile(r"\bBATON_[A-Z0-9_]+\b")
+# Variables Kubernetes injects for a Service named baton; the docs name them as ignored.
+SERVICE_LINK_NAMES = {"BATON_PORT", "BATON_SERVICE_HOST"}
 
 
 def config_env_names() -> set[str]:
@@ -18,7 +20,8 @@ def config_env_names() -> set[str]:
 
 
 def documented_env_names() -> set[str]:
-    return set(ENV_NAME.findall((ROOT / "docs" / "server.md").read_text("utf-8")))
+    names = set(ENV_NAME.findall((ROOT / "docs" / "server.md").read_text("utf-8")))
+    return names - SERVICE_LINK_NAMES
 
 
 def test_every_variable_the_code_reads_is_documented_and_the_reverse() -> None:

@@ -31,21 +31,22 @@ Bootstrap values only. Each is read from the environment variable `BATON_` plus 
 | `BATON_SPOTIFY_CLIENT_ID` | Client id of your Spotify app. |
 | `BATON_SPOTIFY_CLIENT_SECRET` | Client secret of your Spotify app. |
 | `BATON_DATA_DIR` | Directory of the SQLite database (the image sets `/data`). |
-| `BATON_HOST` | Listen address. |
-| `BATON_PORT` | Listen port. |
+| `BATON_LISTEN_HOST` | Listen address. |
+| `BATON_LISTEN_PORT` | Listen port. |
 | `BATON_LOG_LEVEL` | Log level. |
-| `BATON_TRUST_PROXY_HEADERS` | Take the client address for lockouts from the last `X-Forwarded-For` entry; enable only behind a proxy that sets it. |
+| `BATON_TRUST_PROXY_HEADERS` | Take the client address for throttling from the last `X-Forwarded-For` entry; enable only behind a proxy that sets it. Without it, every client behind a proxy shares one address. |
 | `BATON_PROXY_USER_HEADER` | Header carrying the authenticated user in `proxy` mode. |
 | `BATON_SESSION_DAYS` | Lifetime of a web page session in `key` mode. |
 | `BATON_SPOTIFY_API_URL` | Spotify Web API base URL. |
 | `BATON_SPOTIFY_ACCOUNTS_URL` | Spotify accounts service base URL. |
 | `BATON_SETTLE_DELAY_MS` | Pause after a skip before the fresh state is read. |
-| `BATON_THROTTLE_MAX_FAILURES` | Failed key attempts within the window that trigger a lockout. |
+| `BATON_THROTTLE_MAX_FAILURES` | Failed attempts within the window that lock a client out of the web page login, and that start slowing down rejected watch keys. |
 | `BATON_THROTTLE_WINDOW_SECONDS` | Window in which failures are counted. |
-| `BATON_THROTTLE_LOCKOUT_SECONDS` | Length of a lockout. |
+| `BATON_THROTTLE_LOCKOUT_SECONDS` | Length of a login lockout. |
 | `BATON_RECENT_PLAYLISTS_CACHE_SECONDS` | How long the recent playlists list is reused. |
+| `BATON_STATE_CACHE_SECONDS` | How long a playback state read is shared by requests that arrive together or right after each other. |
 
-The server refuses to start when a required value is missing or invalid and says which one.
+The server refuses to start when a required value is missing or invalid and says which one. Other `BATON_*` variables are ignored, so the service-link variables Kubernetes injects for a Service named `baton` (`BATON_PORT=tcp://…`, `BATON_SERVICE_HOST`, …) do not interfere; that is why the listen settings are called `BATON_LISTEN_HOST` and `BATON_LISTEN_PORT`.
 
 Everything a user changes while the server runs lives in the database and is set through the web page or the API: target playlist, default playback device, market and watch keys.
 
@@ -53,7 +54,7 @@ Everything a user changes while the server runs lives in the database and is set
 
 Two route families, never sharing a credential:
 
-- `/api/watch/` accepts only a valid watch key (`Authorization: Bearer`). Cookies and identity headers are ignored there, and a watch key opens nothing outside it. Keys are created on the web page, shown once, stored hashed and revocable.
+- `/api/watch/` accepts only a valid watch key (`Authorization: Bearer`). Cookies and identity headers are ignored there, and a watch key opens nothing outside it. Keys are created on the web page, shown once, stored hashed and revocable. The key is checked first, so a valid key always works; a client that keeps sending wrong keys is only answered more slowly, never locked out.
 - Everything else (web page, `/api/ui/`, settings, keys, Spotify login) is guarded by the auth mode. Only `/healthz` is open.
 
 Modes:
@@ -61,11 +62,13 @@ Modes:
 - `key` (default): `BATON_UI_KEY` is required. The web page exchanges it for an `HttpOnly`, `SameSite=Strict` session cookie (`Secure` on HTTPS installs).
 - `proxy`: a reverse proxy in front authenticates users and sets the header named by `BATON_PROXY_USER_HEADER`; requests without a non-empty value are refused. The server trusts the header, so it must be reachable only through the proxy, and the proxy must route `/api/watch/` past its own login (the watch cannot sign in) and strip the header from requests it does not authenticate.
 
-In both modes state-changing calls from the web page must send JSON or the `X-Baton-Request` header, which a cross-site form post cannot do. Repeated wrong keys, for the web page and for the watch API, lock the client out for a while.
+In both modes state-changing calls from the web page must send JSON or the `X-Baton-Request` header, which a cross-site form post cannot do. Repeated wrong keys on the web page login lock that client out for a while; the watch API has its own, separate counter. Sessions are tied to the current `BATON_UI_KEY`: starting the server with a different key signs every browser out.
+
+Request bodies on `/api/ui/` and `/api/watch/` are capped at 16 KiB (`413` above). Logs carry no Spotify request URLs and no query strings, so neither listening history nor OAuth codes end up in them.
 
 ## Web page API
 
-The page uses `/api/ui/`: `session`, `login`, `logout`, `status`, `state`, the same command paths as the watch API, `device`, `playlists/recent`, `playlists/<id>/play`, `spotify/playlists`, `spotify/devices`, `spotify/disconnect`, `settings` and `keys`. It is meant for the page, not as a stable interface. The Spotify login is `GET /auth/spotify/login` with its callback at `/auth/spotify/callback`.
+The page uses `/api/ui/`: `session`, `login`, `logout`, `status`, `state`, the same command paths as the watch API, `device`, `playlists/recent`, `playlists/<id>/play`, `spotify/playlists`, `spotify/devices`, `spotify/disconnect`, `settings` and `keys`. It is meant for the page, not as a stable interface. The Spotify login starts with `POST /auth/spotify/login`, which answers `{"url": …}` for the page to open, and ends at the callback `/auth/spotify/callback`. It is a POST so that it passes the same-origin check above and a link on another site cannot start it.
 
 ## Development
 

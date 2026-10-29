@@ -35,6 +35,15 @@ LOGIN_TTL_SECONDS = 600
 SECONDS_PER_DAY = 86400
 
 
+class LoginRevoked(errors.ProviderError):
+    """Spotify refused the refresh token itself (``invalid_grant``); only a new login helps."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            errors.SPOTIFY_AUTH, "Spotify login expired or revoked. Log in again on the web page."
+        )
+
+
 def pkce_pair() -> tuple[str, str]:
     """A PKCE (verifier, S256 challenge) pair."""
     verifier = secrets.token_urlsafe(64)
@@ -139,7 +148,7 @@ class SpotifyAccounts:
                 }
             )
         except errors.ProviderError as exc:
-            if exc.code == errors.SPOTIFY_AUTH:
+            if isinstance(exc, LoginRevoked):
                 self._store.save_spotify_auth(
                     SpotifyAuthRecord(
                         record.refresh_token,
@@ -188,17 +197,15 @@ class SpotifyAccounts:
         except ValueError:
             error = None
         if resp.status_code == 400 and error == "invalid_grant":
-            raise errors.ProviderError(
-                errors.SPOTIFY_AUTH,
-                "Spotify login expired or revoked. Log in again on the web page.",
-            )
+            raise LoginRevoked
         if resp.status_code == 429:
             raise errors.ProviderError(
                 errors.SPOTIFY_RATE_LIMITED, "Spotify is rate limiting requests."
             )
         if resp.status_code in (400, 401):
             raise errors.ProviderError(
-                errors.SPOTIFY_AUTH, "Spotify rejected the login. Check the client id and secret."
+                errors.SPOTIFY_ERROR,
+                "Spotify rejected the token request. Check the client id and secret.",
             )
         raise errors.ProviderError(
             errors.SPOTIFY_ERROR, f"Spotify accounts service answered {resp.status_code}."

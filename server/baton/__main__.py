@@ -9,6 +9,7 @@ import uvicorn
 
 from baton.app import create_app
 from baton.config import ConfigError, load_config
+from baton.logs import harden_logging
 
 
 def main() -> int:
@@ -21,10 +22,11 @@ def main() -> int:
     logging.basicConfig(
         level=config.log_level.upper(), format="%(asctime)s %(levelname)s %(message)s"
     )
+    harden_logging()
     uvicorn.run(
         create_app(config),
-        host=config.host,
-        port=config.port,
+        host=config.listen_host,
+        port=config.listen_port,
         log_level=config.log_level,
         proxy_headers=False,
         server_header=False,

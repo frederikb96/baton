@@ -10,6 +10,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from baton import auth
 from baton.app import create_app
 from baton.config import Config, load_config
 from baton.db import SpotifyAuthRecord
@@ -39,6 +40,7 @@ def base_env(data_dir: Path, **overrides: str) -> dict[str, str]:
         "BATON_SPOTIFY_CLIENT_SECRET": "client-secret",
         "BATON_DATA_DIR": str(data_dir),
         "BATON_SETTLE_DELAY_MS": "0",
+        "BATON_STATE_CACHE_SECONDS": "0",
         "BATON_SPOTIFY_API_URL": f"{SPOTIFY_URL}/v1",
         "BATON_SPOTIFY_ACCOUNTS_URL": SPOTIFY_URL,
     }
@@ -107,6 +109,12 @@ class Rig:
 def app_state_of(app: FastAPI):  # type: ignore[no-untyped-def]
     """The shared state of an app."""
     return app.state.baton
+
+
+@pytest.fixture(autouse=True)
+def no_failed_key_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rejected watch keys are answered slowly in production; tests send many of them."""
+    monkeypatch.setattr(auth, "FAILED_KEY_DELAY_SECONDS", 0)
 
 
 @pytest.fixture

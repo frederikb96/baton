@@ -21,7 +21,7 @@ The watch app talks to the server through the phone. This is the whole contract;
 
 ## Server behaviour beyond the contract
 
-- A rejected key answers `401` with the envelope `{"result": "error", "error": null, "message": "Key rejected.", "state": null}`. A client that keeps sending wrong keys is locked out for a while and gets the same `401` (`"Too many failed attempts. Try again later."`), even with a correct key.
+- A rejected key answers `401` with the envelope `{"result": "error", "error": null, "message": "Key rejected.", "state": null}`. The key is checked first: a valid key always works, while a client that keeps sending wrong keys is answered more slowly. Nobody can lock a valid key out.
 - Unknown paths and wrong methods are the framework's plain `404` / `405`.
 - `state` is `null` when no state is available (login problem, Spotify unreachable). Failed commands such as `no_track` and `no_target_playlist` still carry the state that was read.
 - When nothing is active, `GET /state` answers `ok` with `is_playing: false` and every other field `null` (`playlist_name` still shows the configured target).
@@ -30,3 +30,16 @@ The watch app talks to the server through the phone. This is the whole contract;
 - `play`, `shuffle` and `smart` through `/playlists/<id>/play` set the shuffle state explicitly (`normal` switches shuffle off) and start the playlist on the active device, or on the default device when none is active. A playlist id that is not alphanumeric or an unknown mode answers `bad_request`.
 - The recent playlists come from Spotify's recently played items that were played from a playlist, deduplicated, with names cached. A playlist whose name cannot be read is listed as `Unnamed playlist`.
 - Idempotency is decided by a read before every write: `GET /me/library/contains` for likes, the playlist's items for membership (cached per playlist snapshot, so a large playlist is read once per change).
+- Commands run one at a time. A press that arrives while another one is running waits and then acts on the state that one left, so a retried or doubled `playlist/add`, `like` or `play-pause` is never applied twice from stale state. `next` and `previous` are not idempotent: each press skips.
+- Playlist membership reads the whole playlist, however long, and treats a relinked track (Spotify's `linked_from`) as the same track. If the playlist cannot be read completely the answer is `spotify_error`, never a guess from a partial list.
+- `GET /state` is shared between requests that arrive together or right after each other (about a second, `BATON_STATE_CACHE_SECONDS`); every command invalidates it. When Spotify answers 429 with `Retry-After`, further Spotify calls are answered `spotify_rate_limited` until that pause has passed (capped at five minutes).
+- Request bodies are capped at 16 KiB; larger ones get `413`.
+- Whatever Spotify sends back, the answer is the envelope above; an unreadable Spotify answer is `spotify_error`.
+
+## Additions (backward compatible)
+
+These extend the contract; clients written against the text above keep working unchanged.
+
+- `state.track_id`: `str | null`, the Spotify id of the playing track, `null` when nothing likable is playing. Clients that do not know the field ignore it.
+- Optional query parameter `track` on `POST /api/watch/like`, `unlike`, `playlist/add` and `playlist/remove`: the `track_id` of the last state the client showed. If a different track is playing now, nothing is changed and the answer is `{"result": "error", "error": "track_changed", ...}` with the fresh `state`, so the client can show the new track and let the user press again. Without the parameter the commands act on whatever is playing, as before.
+- Error code `track_changed`, only ever answered for an anchored request. A client that does not send `track` never sees it.

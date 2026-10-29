@@ -22,13 +22,20 @@ ACTIONS = {
 }
 
 
+# Commands that act on the playing track and accept the id of the track the caller last saw.
+ANCHORED = {"like", "unlike", "playlist_add", "playlist_remove"}
+
+
 def add_actions(target: APIRouter) -> None:
     """Register the command routes shared by the watch API and the web page API."""
     for path, method in ACTIONS.items():
 
         def make(name: str) -> Any:
             async def handler(request: Request) -> dict[str, Any]:
-                reply: Reply = await getattr(app_state(request).controller, name)()
+                args = (
+                    {"track_id": request.query_params.get("track")} if name in ANCHORED else {}
+                )
+                reply: Reply = await getattr(app_state(request).controller, name)(**args)
                 return reply.body()
 
             return handler

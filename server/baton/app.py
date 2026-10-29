@@ -18,6 +18,7 @@ from baton.auth import HEALTH_PATH, WATCH_PREFIX, AppState, Throttle, WatchAuthE
 from baton.config import Config
 from baton.controller import Controller
 from baton.db import Store
+from baton.limits import BodyLimitMiddleware
 from baton.providers.spotify import SpotifyProvider
 from baton.providers.spotify_accounts import SpotifyAccounts
 
@@ -36,20 +37,28 @@ def create_app(
 ) -> FastAPI:
     """Build the app; ``transport`` and ``now`` let tests replace Spotify and the clock."""
     store = Store(Path(config.data_dir), now)
+    store.sync_ui_key(config.ui_key)
     client = httpx.AsyncClient(transport=transport)
     accounts = SpotifyAccounts(config, store, client, now)
     provider = SpotifyProvider(
-        config.spotify_api_url, accounts, client, lambda: store.get_settings().market
+        config.spotify_api_url, accounts, client, lambda: store.get_settings().market, now
     )
     controller = Controller(
-        provider, store, now, config.settle_delay_ms / 1000, config.recent_playlists_cache_seconds
-    )
-    throttle = Throttle(
-        config.throttle_max_failures,
-        config.throttle_window_seconds,
-        config.throttle_lockout_seconds,
+        provider,
+        store,
         now,
+        config.settle_delay_ms / 1000,
+        config.recent_playlists_cache_seconds,
+        config.state_cache_seconds,
     )
+
+    def new_throttle() -> Throttle:
+        return Throttle(
+            config.throttle_max_failures,
+            config.throttle_window_seconds,
+            config.throttle_lockout_seconds,
+            now,
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -65,7 +74,9 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
     )
-    app.state.baton = AppState(config, store, accounts, provider, controller, throttle, now)
+    app.state.baton = AppState(
+        config, store, accounts, provider, controller, new_throttle(), new_throttle(), now
+    )
 
     @app.exception_handler(WatchAuthError)
     async def watch_auth_failed(_: Request, exc: WatchAuthError) -> JSONResponse:
@@ -91,6 +102,8 @@ def create_app(
         if path.startswith(("/api/", "/auth/")):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    app.add_middleware(BodyLimitMiddleware)
 
     app.include_router(routes_watch.router)
     app.include_router(routes_ui.public)

@@ -7,6 +7,7 @@ is looked at on watch routes, and a watch key opens nothing outside them.
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 from collections import defaultdict, deque
 from collections.abc import Callable
@@ -28,10 +29,12 @@ CSRF_HEADER = "x-baton-request"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 WATCH_PREFIX = "/api/watch/"
 HEALTH_PATH = "/healthz"
+# Pause before answering a rejected key from a client that keeps failing.
+FAILED_KEY_DELAY_SECONDS = 1.0
 
 
 class WatchAuthError(Exception):
-    """The watch key is missing, invalid or the client is locked out."""
+    """The watch key is missing or invalid."""
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
@@ -87,6 +90,7 @@ class AppState:
     provider: Provider
     controller: Controller
     throttle: Throttle
+    watch_throttle: Throttle
     now: Callable[[], float]
 
 
@@ -116,16 +120,21 @@ def bearer_token(request: Request) -> str | None:
 
 
 async def require_watch_key(request: Request) -> None:
-    """Dependency of every watch route."""
+    """Dependency of every watch route.
+
+    The key is checked first, so a valid key always passes. Wrong keys never lock anyone out;
+    a client that keeps sending them is only answered more slowly.
+    """
     state = app_state(request)
     client = client_id(request, state.config)
-    if state.throttle.locked(client):
-        raise WatchAuthError("Too many failed attempts. Try again later.")
     token = bearer_token(request)
-    if token is None or not state.store.verify_watch_key(token):
-        state.throttle.fail(client)
-        raise WatchAuthError("Key rejected.")
-    state.throttle.succeed(client)
+    if token is not None and state.store.verify_watch_key(token):
+        state.watch_throttle.succeed(client)
+        return
+    state.watch_throttle.fail(client)
+    if state.watch_throttle.locked(client):
+        await asyncio.sleep(FAILED_KEY_DELAY_SECONDS)
+    raise WatchAuthError("Key rejected.")
 
 
 def proxy_user(request: Request, config: Config) -> str | None:

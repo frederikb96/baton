@@ -300,6 +300,14 @@ $("device-switch").addEventListener("click", async () => {
 });
 $("set-save").addEventListener("click", saveSettings);
 $("key-form").addEventListener("submit", createKey);
+$("sp-login").addEventListener("click", async () => {
+  const response = await fetch("/auth/spotify/login", {
+    method: "POST", credentials: "same-origin", headers: { "X-Baton-Request": "1" },
+  });
+  if (response.status === 401) return showLogin();
+  if (!response.ok) return alert("Could not start the Spotify login.");
+  window.location.href = (await response.json()).url;
+});
 $("sp-disconnect").addEventListener("click", async () => {
   if (!confirm("Forget the Spotify login?")) return;
   await api("POST", "/spotify/disconnect", {});

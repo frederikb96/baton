@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import functools
+import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
@@ -18,12 +20,17 @@ ALREADY = "already"
 ERROR = "error"
 RESTART_THRESHOLD_MS = 5000
 MAX_RECENT_PLAYLISTS = 15
-PLAYLIST_ID = re.compile(r"^[A-Za-z0-9]{1,64}$")
+PLAYLIST_ID_PATTERN = r"[A-Za-z0-9]{1,64}"
+PLAYLIST_ID = re.compile(f"^{PLAYLIST_ID_PATTERN}$")
 PLAY_MODES = ("normal", "shuffle", "smart")
+UNEXPECTED_MESSAGE = "Spotify sent an answer baton does not understand."
 SMART_FALLBACK_MESSAGE = (
     "Smart shuffle is not available through the Spotify API; started with shuffle."
 )
 T = TypeVar("T")
+Command = Callable[..., Coroutine[Any, Any, "Reply"]]
+UNEXPECTED_ANSWER = (KeyError, IndexError, TypeError, ValueError, AttributeError)
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -40,6 +47,7 @@ class State:
     playlist_name: str | None
     device_name: str | None
     server_time_ms: int
+    track_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,8 +77,43 @@ def failure(code: str, message: str, state: State | None = None) -> Reply:
     return Reply(ERROR, code, message, state)
 
 
+def guarded(func: Command) -> Command:
+    """Turn provider failures and unexpected Spotify answers into an error reply."""
+
+    @functools.wraps(func)
+    async def wrapper(self: Controller, *args: Any, **kwargs: Any) -> Reply:
+        try:
+            return await func(self, *args, **kwargs)
+        except errors.ProviderError as exc:
+            return failure(exc.code, exc.message)
+        except UNEXPECTED_ANSWER:
+            log.exception("unexpected answer from Spotify")
+            return failure(errors.SPOTIFY_ERROR, UNEXPECTED_MESSAGE)
+
+    return wrapper
+
+
+def serialized(func: Command) -> Command:
+    """Run commands one at a time, each on the state the previous one left behind."""
+
+    @functools.wraps(func)
+    async def wrapper(self: Controller, *args: Any, **kwargs: Any) -> Reply:
+        async with self._lock:
+            try:
+                return await func(self, *args, **kwargs)
+            finally:
+                self._state_generation += 1
+                self._state_cache = None
+
+    return wrapper
+
+
 class Controller:
-    """Turns button presses into idempotent provider calls."""
+    """Turns button presses into idempotent provider calls.
+
+    Commands run one at a time. A like, playlist or skip press that waited for another one
+    therefore sees what that one did, and a retried press finds its work already done.
+    """
 
     def __init__(
         self,
@@ -79,6 +122,7 @@ class Controller:
         now: Callable[[], float],
         settle_delay: float,
         recent_cache_seconds: float,
+        state_cache_seconds: float,
     ) -> None:
         self._provider = provider
         self._store = store
@@ -87,6 +131,11 @@ class Controller:
         self._recent_ttl = recent_cache_seconds
         self._recent: tuple[float, list[Playlist]] | None = None
         self._names: dict[str, str] = {}
+        self._state_ttl = state_cache_seconds
+        self._state_cache: tuple[float, Reply] | None = None
+        self._state_inflight: asyncio.Future[Reply] | None = None
+        self._state_generation = 0
+        self._lock = asyncio.Lock()
 
     # state
 
@@ -97,6 +146,9 @@ class Controller:
         except errors.ProviderError as exc:
             if exc.code == errors.SPOTIFY_AUTH:
                 raise
+            return None
+        except UNEXPECTED_ANSWER:
+            log.exception("unexpected answer from Spotify")
             return None
 
     async def _state(
@@ -123,6 +175,7 @@ class Controller:
             playlist_name=target.name if target else None,
             device_name=pb.device.name if pb and pb.device else None,
             server_time_ms=int(self._now() * 1000),
+            track_id=track.id if track else None,
         )
 
     async def _fresh(self) -> State:
@@ -132,53 +185,65 @@ class Controller:
         return await self._state(await self._provider.playback())
 
     async def state(self) -> Reply:
-        """Current state."""
+        """Current state; reads that overlap or follow each other closely share one lookup."""
+        if self._state_cache and self._now() - self._state_cache[0] < self._state_ttl:
+            return self._state_cache[1]
+        if self._state_inflight is None:
+            self._state_inflight = asyncio.ensure_future(self._read_state())
+        return await asyncio.shield(self._state_inflight)
+
+    @guarded
+    async def _read_state_reply(self) -> Reply:
+        return Reply(OK, state=await self._state(await self._provider.playback()))
+
+    async def _read_state(self) -> Reply:
+        generation = self._state_generation
         try:
-            return Reply(OK, state=await self._state(await self._provider.playback()))
-        except errors.ProviderError as exc:
-            return failure(exc.code, exc.message)
+            reply = await self._read_state_reply()
+            if reply.result == OK and generation == self._state_generation:
+                self._state_cache = (self._now(), reply)
+            return reply
+        finally:
+            self._state_inflight = None
 
     # playback commands
 
+    @serialized
+    @guarded
     async def play_pause(self) -> Reply:
         """Pause when playing, resume when paused, start on the default device when idle."""
-        try:
-            pb = await self._provider.playback()
-            if pb is None or pb.device is None:
-                device = await self._default_device()
-                await self._provider.transfer(device.id, play=True)
-                return Reply(OK, state=await self._fresh())
-            if pb.is_playing:
-                await self._provider.pause()
-            else:
-                await self._provider.resume()
-            return Reply(
-                OK, state=await self._state(dataclasses.replace(pb, is_playing=not pb.is_playing))
-            )
-        except errors.ProviderError as exc:
-            return failure(exc.code, exc.message)
+        pb = await self._provider.playback()
+        if pb is None or pb.device is None:
+            device = await self._default_device()
+            await self._provider.transfer(device.id, play=True)
+            return Reply(OK, state=await self._fresh())
+        if pb.is_playing:
+            await self._provider.pause()
+        else:
+            await self._provider.resume()
+        return Reply(
+            OK, state=await self._state(dataclasses.replace(pb, is_playing=not pb.is_playing))
+        )
 
+    @serialized
+    @guarded
     async def next(self) -> Reply:
         """Skip to the next track."""
-        try:
-            await self._provider.next()
-            return Reply(OK, state=await self._fresh())
-        except errors.ProviderError as exc:
-            return failure(exc.code, exc.message)
+        await self._provider.next()
+        return Reply(OK, state=await self._fresh())
 
+    @serialized
+    @guarded
     async def previous(self) -> Reply:
         """Restart the track after five seconds, otherwise go to the previous one."""
-        try:
-            pb = await self._provider.playback()
-            if pb is None:
-                return failure(errors.NO_DEVICE, "No active Spotify device.")
-            if (pb.progress_ms or 0) > RESTART_THRESHOLD_MS:
-                await self._provider.seek(0)
-            else:
-                await self._provider.previous()
-            return Reply(OK, state=await self._fresh())
-        except errors.ProviderError as exc:
-            return failure(exc.code, exc.message)
+        pb = await self._provider.playback()
+        if pb is None:
+            return failure(errors.NO_DEVICE, "No active Spotify device.")
+        if (pb.progress_ms or 0) > RESTART_THRESHOLD_MS:
+            await self._provider.seek(0)
+        else:
+            await self._provider.previous()
+        return Reply(OK, state=await self._fresh())
 
     async def _default_device(self) -> Device:
         """The configured default device if Spotify lists it."""
@@ -195,65 +260,68 @@ class Controller:
 
     # library and playlist
 
-    async def _current_track(self) -> tuple[Playback | None, Reply | None]:
+    async def _current_track(self, track_id: str | None) -> tuple[Playback | None, Reply | None]:
+        """The playback, or the reply to give when it holds nothing the press can act on."""
         pb = await self._provider.playback()
         if pb is None or pb.track is None:
             state = await self._state(pb) if pb else None
             return pb, failure(errors.NO_TRACK, "Nothing likable is playing.", state)
+        if track_id is not None and track_id != pb.track.id:
+            return pb, failure(
+                errors.TRACK_CHANGED, "The track changed since it was shown.", await self._state(pb)
+            )
         return pb, None
 
-    async def like(self) -> Reply:
+    async def like(self, track_id: str | None = None) -> Reply:
         """Add the current track to Liked Songs if it is not there."""
-        return await self._library(want=True)
+        return await self._library(want=True, track_id=track_id)
 
-    async def unlike(self) -> Reply:
+    async def unlike(self, track_id: str | None = None) -> Reply:
         """Remove the current track from Liked Songs if it is there."""
-        return await self._library(want=False)
+        return await self._library(want=False, track_id=track_id)
 
-    async def _library(self, *, want: bool) -> Reply:
-        try:
-            pb, problem = await self._current_track()
-            if problem or pb is None or pb.track is None:
-                return problem or failure(errors.NO_TRACK, "Nothing likable is playing.")
-            liked = await self._provider.is_liked(pb.track.uri)
-            if liked == want:
-                return Reply(ALREADY, state=await self._state(pb, liked=liked))
-            if want:
-                await self._provider.like(pb.track.uri)
-            else:
-                await self._provider.unlike(pb.track.uri)
-            return Reply(OK, state=await self._state(pb, liked=want))
-        except errors.ProviderError as exc:
-            return failure(exc.code, exc.message)
+    @serialized
+    @guarded
+    async def _library(self, *, want: bool, track_id: str | None) -> Reply:
+        pb, problem = await self._current_track(track_id)
+        if problem or pb is None or pb.track is None:
+            return problem or failure(errors.NO_TRACK, "Nothing likable is playing.")
+        liked = await self._provider.is_liked(pb.track.uri)
+        if liked == want:
+            return Reply(ALREADY, state=await self._state(pb, liked=liked))
+        if want:
+            await self._provider.like(pb.track.uri)
+        else:
+            await self._provider.unlike(pb.track.uri)
+        return Reply(OK, state=await self._state(pb, liked=want))
 
-    async def playlist_add(self) -> Reply:
+    async def playlist_add(self, track_id: str | None = None) -> Reply:
         """Add the current track to the target playlist if it is not in it."""
-        return await self._playlist(want=True)
+        return await self._playlist(want=True, track_id=track_id)
 
-    async def playlist_remove(self) -> Reply:
+    async def playlist_remove(self, track_id: str | None = None) -> Reply:
         """Remove the current track from the target playlist if it is in it."""
-        return await self._playlist(want=False)
+        return await self._playlist(want=False, track_id=track_id)
 
-    async def _playlist(self, *, want: bool) -> Reply:
-        try:
-            pb, problem = await self._current_track()
-            if problem or pb is None or pb.track is None:
-                return problem or failure(errors.NO_TRACK, "Nothing likable is playing.")
-            target = self._store.get_settings().target_playlist
-            if target is None:
-                return failure(
-                    errors.NO_TARGET_PLAYLIST, "No target playlist is set.", await self._state(pb)
-                )
-            member = await self._provider.playlist_contains(target.id, pb.track.uri)
-            if member == want:
-                return Reply(ALREADY, state=await self._state(pb, in_playlist=member))
-            if want:
-                await self._provider.playlist_add(target.id, pb.track.uri)
-            else:
-                await self._provider.playlist_remove(target.id, pb.track.uri)
-            return Reply(OK, state=await self._state(pb, in_playlist=want))
-        except errors.ProviderError as exc:
-            return failure(exc.code, exc.message)
+    @serialized
+    @guarded
+    async def _playlist(self, *, want: bool, track_id: str | None) -> Reply:
+        pb, problem = await self._current_track(track_id)
+        if problem or pb is None or pb.track is None:
+            return problem or failure(errors.NO_TRACK, "Nothing likable is playing.")
+        target = self._store.get_settings().target_playlist
+        if target is None:
+            return failure(
+                errors.NO_TARGET_PLAYLIST, "No target playlist is set.", await self._state(pb)
+            )
+        member = await self._provider.playlist_contains(target.id, pb.track.uri)
+        if member == want:
+            return Reply(ALREADY, state=await self._state(pb, in_playlist=member))
+        if want:
+            await self._provider.playlist_add(target.id, pb.track.uri)
+        else:
+            await self._provider.playlist_remove(target.id, pb.track.uri)
+        return Reply(OK, state=await self._state(pb, in_playlist=want))
 
     # recent playlists
 
@@ -277,29 +345,24 @@ class Controller:
         self._recent = (self._now(), playlists)
         return playlists
 
+    @guarded
     async def playlists(self) -> Reply:
         """Reply carrying the recent playlists."""
-        try:
-            items = [{"id": p.id, "name": p.name} for p in await self.recent_playlists()]
-            return Reply(OK, extra={"playlists": items})
-        except errors.ProviderError as exc:
-            return failure(exc.code, exc.message)
+        items = [{"id": p.id, "name": p.name} for p in await self.recent_playlists()]
+        return Reply(OK, extra={"playlists": items})
 
+    @serialized
+    @guarded
     async def play_playlist(self, playlist_id: str, mode: str) -> Reply:
         """Start a playlist as normal, shuffled or smart (falls back to shuffled)."""
         if mode not in PLAY_MODES or not PLAYLIST_ID.match(playlist_id):
             return failure(errors.BAD_REQUEST, "Unknown playlist id or mode.")
-        try:
-            pb = await self._provider.playback()
-            device_id = None
-            if pb is None or pb.device is None:
-                device_id = (await self._default_device()).id
-            await self._provider.start_playlist(
-                playlist_id, shuffle=mode != "normal", device_id=device_id
-            )
-            state = await self._fresh()
-            return Reply(
-                OK, message=SMART_FALLBACK_MESSAGE if mode == "smart" else None, state=state
-            )
-        except errors.ProviderError as exc:
-            return failure(exc.code, exc.message)
+        pb = await self._provider.playback()
+        device_id = None
+        if pb is None or pb.device is None:
+            device_id = (await self._default_device()).id
+        await self._provider.start_playlist(
+            playlist_id, shuffle=mode != "normal", device_id=device_id
+        )
+        state = await self._fresh()
+        return Reply(OK, message=SMART_FALLBACK_MESSAGE if mode == "smart" else None, state=state)

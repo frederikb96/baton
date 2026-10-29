@@ -31,8 +31,8 @@ class Config(BaseModel):
     spotify_client_id: str
     spotify_client_secret: str
     data_dir: str
-    host: str
-    port: int
+    listen_host: str
+    listen_port: int
     log_level: str
     trust_proxy_headers: bool
     proxy_user_header: str
@@ -44,6 +44,7 @@ class Config(BaseModel):
     throttle_window_seconds: int
     throttle_lockout_seconds: int
     recent_playlists_cache_seconds: int
+    state_cache_seconds: float
 
     @field_validator("public_url")
     @classmethod

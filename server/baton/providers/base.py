@@ -26,6 +26,11 @@ class Track:
     artist: str | None
     duration_ms: int | None
 
+    @property
+    def id(self) -> str:
+        """The Spotify id, the last part of the URI."""
+        return self.uri.rsplit(":", 1)[-1]
+
 
 @dataclass(frozen=True)
 class Playback:

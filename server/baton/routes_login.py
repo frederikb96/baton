@@ -5,8 +5,8 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import HTMLResponse
 
 from baton import errors
 from baton.auth import app_state, keys_equal, proxy_user, require_ui
@@ -39,12 +39,15 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/auth/spotify/login", dependencies=[Depends(require_ui)])
-async def spotify_login(request: Request) -> RedirectResponse:
-    """Send the browser to Spotify; a cookie ties the round trip to this browser."""
+@router.post("/auth/spotify/login", dependencies=[Depends(require_ui)])
+async def spotify_login(request: Request, response: Response) -> dict[str, str]:
+    """Register a login and return the Spotify URL to open.
+
+    A POST, so the same-origin check of the UI API applies and a link on another site cannot
+    start a login in the owner's browser. A cookie ties the round trip to this browser.
+    """
     state = app_state(request)
     token, url = state.accounts.start_login()
-    response = RedirectResponse(url, status_code=302)
     response.set_cookie(
         OAUTH_COOKIE,
         token,
@@ -54,7 +57,7 @@ async def spotify_login(request: Request) -> RedirectResponse:
         secure=state.config.cookie_secure,
         path=OAUTH_COOKIE_PATH,
     )
-    return response
+    return {"url": url}
 
 
 @router.get("/auth/spotify/callback", response_model=None)

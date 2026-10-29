@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -13,6 +14,9 @@ from baton.providers.spotify_accounts import SpotifyAccounts
 
 PAGE_SIZE = 50
 MAX_PAGES = 40
+# Spotify caps a playlist at 10000 items; the membership scan must be able to read all of them.
+MEMBER_MAX_PAGES = 220
+MAX_RETRY_AFTER_SECONDS = 300
 DEFAULT_MARKET = "from_token"
 PLAYER_PATH = "/me/player"
 
@@ -45,11 +49,14 @@ class SpotifyProvider(Provider):
         accounts: SpotifyAccounts,
         client: httpx.AsyncClient,
         market: Callable[[], str | None],
+        now: Callable[[], float],
     ) -> None:
         self._api = api_url.rstrip("/")
         self._accounts = accounts
         self._client = client
         self._market = market
+        self._now = now
+        self._rate_limited_until = 0.0
         self._playlist_cache: dict[str, tuple[str, set[str]]] = {}
 
     # transport
@@ -63,6 +70,9 @@ class SpotifyProvider(Provider):
         json: Any = None,
         ok: tuple[int, ...] = (200, 201, 202, 204),
     ) -> httpx.Response:
+        wait = self._rate_limited_until - self._now()
+        if wait > 0:
+            raise self._rate_limited(wait)
         resp: httpx.Response | None = None
         for attempt in range(2):
             token = await self._accounts.access_token(force=attempt == 1)
@@ -84,7 +94,24 @@ class SpotifyProvider(Provider):
         assert resp is not None
         if resp.status_code in ok:
             return resp
+        if resp.status_code == 429:
+            self._note_retry_after(resp)
         raise self._error(resp, path)
+
+    def _note_retry_after(self, resp: httpx.Response) -> None:
+        """Stop calling Spotify until the pause it asked for has passed."""
+        try:
+            seconds = float(resp.headers.get("Retry-After", ""))
+        except ValueError:
+            return
+        self._rate_limited_until = self._now() + min(max(seconds, 0.0), MAX_RETRY_AFTER_SECONDS)
+
+    @staticmethod
+    def _rate_limited(wait: float) -> errors.ProviderError:
+        return errors.ProviderError(
+            errors.SPOTIFY_RATE_LIMITED,
+            f"Spotify rate limit reached. Retry in {math.ceil(wait)} s.",
+        )
 
     @staticmethod
     def _error(resp: httpx.Response, path: str) -> errors.ProviderError:
@@ -210,32 +237,37 @@ class SpotifyProvider(Provider):
         return str(data.get("snapshot_id") or ""), str(data.get("name") or "")
 
     async def _members(self, playlist_id: str) -> set[str]:
+        """Every URI in the playlist, including the pre-relinking URIs, cached per snapshot."""
         snapshot, _ = await self._snapshot(playlist_id)
         cached = self._playlist_cache.get(playlist_id)
         if cached and snapshot and cached[0] == snapshot:
             return cached[1]
         uris: set[str] = set()
         offset = 0
-        for _ in range(MAX_PAGES):
+        for _ in range(MEMBER_MAX_PAGES):
             resp = await self._request(
                 "GET",
                 f"/playlists/{playlist_id}/items",
                 params={
                     "limit": PAGE_SIZE,
                     "offset": offset,
-                    "fields": "items(item(uri),track(uri)),next",
+                    "market": self._market() or DEFAULT_MARKET,
+                    "fields": "items(item(uri,linked_from(uri)),track(uri,linked_from(uri))),next",
                 },
             )
             page = resp.json()
             for entry in page.get("items", []):
                 inner = (entry or {}).get("item") or (entry or {}).get("track") or {}
-                if inner.get("uri"):
-                    uris.add(inner["uri"])
+                for source in (inner, inner.get("linked_from") or {}):
+                    if source.get("uri"):
+                        uris.add(source["uri"])
             if not page.get("next"):
-                break
+                self._playlist_cache[playlist_id] = (snapshot, uris)
+                return uris
             offset += PAGE_SIZE
-        self._playlist_cache[playlist_id] = (snapshot, uris)
-        return uris
+        raise errors.ProviderError(
+            errors.SPOTIFY_ERROR, "The playlist is too long to check for the track."
+        )
 
     async def playlist_contains(self, playlist_id: str, uri: str) -> bool:
         """Whether the playlist holds the track."""

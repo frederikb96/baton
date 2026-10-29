@@ -6,6 +6,7 @@ instance (``uvicorn --factory tests.fake_spotify:demo_app``).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from dataclasses import dataclass, field
 from typing import Any
@@ -58,6 +59,8 @@ class FakeSpotify:
     )
     episode_playing: bool = False
     refresh_response_rotates: bool = False
+    latency: float = 0.0
+    relinks: dict[str, str] = field(default_factory=dict)
 
     def current_uri(self) -> str | None:
         """URI of the current track."""
@@ -173,6 +176,8 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
             auth = request.headers.get("authorization", "")
             if auth.removeprefix("Bearer ") not in fake.valid_access:
                 return JSONResponse({"error": {"status": 401, "message": "expired"}}, 401)
+            if fake.latency:
+                await asyncio.sleep(fake.latency)
             if (early := injected(request)) is not None:
                 return early
         response: Response = await call_next(request)
@@ -356,6 +361,13 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
             return JSONResponse({"error": {"status": 404, "message": "Not found"}}, 404)
         return JSONResponse({"name": found.name, "snapshot_id": f"snap-{found.snapshot}"})
 
+    def item_of(stored: str) -> dict[str, Any]:
+        """A playlist item as Spotify shows it with a market: relinked tracks name the original."""
+        relinked = fake.relinks.get(stored)
+        if relinked is None:
+            return {"uri": stored}
+        return {"uri": relinked, "linked_from": {"uri": stored}}
+
     @app.get("/v1/playlists/{playlist_id}/items")
     async def playlist_items(playlist_id: str, offset: int = 0, limit: int = PAGE) -> Response:
         found = find(playlist_id)
@@ -364,7 +376,7 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
         page = found.items[offset : offset + limit]
         more = offset + limit < len(found.items)
         return JSONResponse(
-            {"items": [{"item": {"uri": u}} for u in page], "next": "more" if more else None}
+            {"items": [{"item": item_of(u)} for u in page], "next": "more" if more else None}
         )
 
     @app.post("/v1/playlists/{playlist_id}/items")

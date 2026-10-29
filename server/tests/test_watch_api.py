@@ -22,6 +22,8 @@ STATE_KEYS = {
     "device_name",
     "server_time_ms",
 }
+# Added after the first release; clients written against the original state object ignore it.
+STATE_ADDITIONS = {"track_id"}
 T0, T1, T2 = "spotify:track:t0", "spotify:track:t1", "spotify:track:t2"
 
 
@@ -34,7 +36,7 @@ async def call(rig: Rig, method: str, path: str) -> dict[str, Any]:
     body: dict[str, Any] = resp.json()
     assert body.keys() >= ENVELOPE_KEYS
     if body["state"] is not None:
-        assert set(body["state"]) == STATE_KEYS
+        assert set(body["state"]) == STATE_KEYS | STATE_ADDITIONS
     return body
 
 
@@ -55,6 +57,7 @@ async def test_state_shape_and_values(rig: Rig) -> None:
     assert state["playlist_name"] == "My Shazam"
     assert state["device_name"] == "Alex's iPhone"
     assert state["server_time_ms"] == int(rig.clock() * 1000)
+    assert state["track_id"] == "t2"
 
 
 async def test_state_without_active_device_is_ok_and_empty(rig: Rig) -> None:
@@ -365,17 +368,6 @@ async def test_revoked_key_is_rejected(rig: Rig) -> None:
     assert (await rig.watch_get("state")).status_code == 200
     store.revoke_watch_key(key_id)
     assert (await rig.watch_get("state")).status_code == 401
-
-
-async def test_failed_attempts_lock_the_client_out(rig: Rig) -> None:
-    for _ in range(10):
-        assert (
-            await rig.client.get("/api/watch/state", headers={"Authorization": "Bearer x"})
-        ).status_code == 401
-    resp = await rig.watch_get("state")
-    assert resp.status_code == 401 and "Too many" in resp.json()["message"]
-    rig.clock.t += 301
-    assert (await rig.watch_get("state")).status_code == 200
 
 
 async def test_success_resets_failure_count(rig: Rig) -> None:

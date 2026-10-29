@@ -9,6 +9,7 @@ SPOTIFY_AUTH = "spotify_auth"
 SPOTIFY_RATE_LIMITED = "spotify_rate_limited"
 SPOTIFY_ERROR = "spotify_error"
 BAD_REQUEST = "bad_request"
+TRACK_CHANGED = "track_changed"
 
 
 class ProviderError(Exception):

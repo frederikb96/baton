@@ -11,23 +11,30 @@ from tests.conftest import PUBLIC_URL, Rig, app_state_of
 
 async def start_login(rig: Rig, headers: dict[str, str] | None = None) -> httpx.Response:
     await rig.login_ui()
-    return await rig.client.get("/auth/spotify/login", headers=headers)
+    return await rig.client.post(
+        "/auth/spotify/login", headers={"X-Baton-Request": "1", **(headers or {})}
+    )
+
+
+def authorize_url(resp: httpx.Response) -> str:
+    assert resp.status_code == 200, resp.text
+    url: str = resp.json()["url"]
+    return url
 
 
 async def test_full_login_round_trip(make_rig) -> None:  # type: ignore[no-untyped-def]
     rig: Rig = make_rig()
     resp = await start_login(rig)
-    assert resp.status_code == 302
-    target = urlsplit(resp.headers["location"])
+    target = urlsplit(authorize_url(resp))
     query = parse_qs(target.query)
     assert f"{target.scheme}://{target.netloc}" == "http://spotify.test"
     assert query["client_id"] == ["client-id"] and query["response_type"] == ["code"]
     assert query["code_challenge_method"] == ["S256"] and query["code_challenge"][0]
     assert "user-modify-playback-state" in query["scope"][0]
-    assert "client-secret" not in resp.headers["location"]
+    assert "client-secret" not in authorize_url(resp)
 
     # Spotify's authorize step, then the redirect back to baton carrying code and state.
-    back = urlsplit((await _fake_authorize(rig, resp.headers["location"])).headers["location"])
+    back = urlsplit((await _fake_authorize(rig, authorize_url(resp))).headers["location"])
     assert f"{back.scheme}://{back.netloc}{back.path}" == f"{PUBLIC_URL}/auth/spotify/callback"
     callback = await rig.client.get(f"{back.path}?{back.query}")
     assert callback.status_code == 200 and "Spotify linked" in callback.text
@@ -56,19 +63,37 @@ async def test_redirect_uri_comes_from_configuration_not_the_host_header(make_ri
     resp = await start_login(
         rig, headers={"Host": "evil.example.org", "X-Forwarded-Host": "evil.example.org"}
     )
-    query = parse_qs(urlsplit(resp.headers["location"]).query)
+    query = parse_qs(urlsplit(authorize_url(resp)).query)
     assert query["redirect_uri"] == [f"{PUBLIC_URL}/auth/spotify/callback"]
 
 
 async def test_login_needs_ui_auth(make_rig) -> None:  # type: ignore[no-untyped-def]
     rig: Rig = make_rig()
-    assert (await rig.client.get("/auth/spotify/login")).status_code == 401
+    assert (await rig.client.post("/auth/spotify/login", json={})).status_code == 401
+
+
+async def test_login_does_not_start_from_a_plain_get(make_rig) -> None:  # type: ignore[no-untyped-def]
+    rig: Rig = make_rig()
+    await rig.login_ui()
+    resp = await rig.client.get("/auth/spotify/login")
+    assert resp.status_code == 405 and "baton_oauth" not in resp.headers.get("set-cookie", "")
+
+
+async def test_login_post_needs_the_same_origin_marker(make_rig) -> None:  # type: ignore[no-untyped-def]
+    rig: Rig = make_rig()
+    await rig.login_ui()
+    form = await rig.client.post(
+        "/auth/spotify/login",
+        content=b"x=1",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert form.status_code == 403 and "baton_oauth" not in form.headers.get("set-cookie", "")
 
 
 async def test_callback_rejects_wrong_or_missing_state(make_rig) -> None:  # type: ignore[no-untyped-def]
     rig: Rig = make_rig()
     resp = await start_login(rig)
-    state = parse_qs(urlsplit(resp.headers["location"]).query)["state"][0]
+    state = parse_qs(urlsplit(authorize_url(resp)).query)["state"][0]
     cookie = rig.client.cookies.get("baton_oauth")
     assert cookie == state
 
@@ -83,7 +108,7 @@ async def test_callback_rejects_wrong_or_missing_state(make_rig) -> None:  # typ
 async def test_callback_state_is_single_use_and_expires(make_rig) -> None:  # type: ignore[no-untyped-def]
     rig: Rig = make_rig()
     resp = await start_login(rig)
-    state = parse_qs(urlsplit(resp.headers["location"]).query)["state"][0]
+    state = parse_qs(urlsplit(authorize_url(resp)).query)["state"][0]
     ok = await rig.client.get(f"/auth/spotify/callback?code=good-code&state={state}")
     assert "Spotify linked" in ok.text
     rig.client.cookies.set("baton_oauth", state, path="/auth/spotify")
@@ -92,7 +117,7 @@ async def test_callback_state_is_single_use_and_expires(make_rig) -> None:  # ty
 
     rig.client.cookies.delete("baton_oauth")
     resp = await start_login(rig)
-    state = parse_qs(urlsplit(resp.headers["location"]).query)["state"][0]
+    state = parse_qs(urlsplit(authorize_url(resp)).query)["state"][0]
     rig.clock.t += 601
     late = await rig.client.get(f"/auth/spotify/callback?code=good-code&state={state}")
     assert "failed" in late.text
@@ -101,7 +126,7 @@ async def test_callback_state_is_single_use_and_expires(make_rig) -> None:  # ty
 async def test_callback_with_bad_code_shows_failure(make_rig) -> None:  # type: ignore[no-untyped-def]
     rig: Rig = make_rig()
     resp = await start_login(rig)
-    state = parse_qs(urlsplit(resp.headers["location"]).query)["state"][0]
+    state = parse_qs(urlsplit(authorize_url(resp)).query)["state"][0]
     bad = await rig.client.get(f"/auth/spotify/callback?code=nope&state={state}")
     assert "failed" in bad.text and app_state_of(rig.app).store.get_spotify_auth() is None
 
@@ -109,7 +134,7 @@ async def test_callback_with_bad_code_shows_failure(make_rig) -> None:  # type: 
 async def test_callback_after_user_denied(make_rig) -> None:  # type: ignore[no-untyped-def]
     rig: Rig = make_rig()
     resp = await start_login(rig)
-    state = parse_qs(urlsplit(resp.headers["location"]).query)["state"][0]
+    state = parse_qs(urlsplit(authorize_url(resp)).query)["state"][0]
     denied = await rig.client.get(f"/auth/spotify/callback?error=access_denied&state={state}")
     assert "access_denied" in denied.text
 
@@ -153,7 +178,7 @@ async def test_new_login_clears_the_invalid_mark(make_rig) -> None:  # type: ign
     await rig.watch_get("state")
     assert not app_state_of(rig.app).accounts.status()["valid"]
     resp = await start_login(rig)
-    state = parse_qs(urlsplit(resp.headers["location"]).query)["state"][0]
+    state = parse_qs(urlsplit(authorize_url(resp)).query)["state"][0]
     await rig.client.get(f"/auth/spotify/callback?code=good-code&state={state}")
     assert app_state_of(rig.app).accounts.status()["valid"]
 

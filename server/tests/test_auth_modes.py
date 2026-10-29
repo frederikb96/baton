@@ -21,7 +21,6 @@ UI_GET_PATHS = [
     "/api/ui/spotify/playlists",
     "/api/ui/spotify/devices",
     "/api/ui/playlists/recent",
-    "/auth/spotify/login",
 ]
 
 

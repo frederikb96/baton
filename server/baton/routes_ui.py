@@ -20,6 +20,7 @@ from baton.auth import (
     require_ui,
     session_valid,
 )
+from baton.controller import PLAYLIST_ID_PATTERN
 from baton.db import Ref
 from baton.routes_watch import add_actions
 
@@ -30,6 +31,7 @@ STATUS_FOR_CODE = {
     errors.SPOTIFY_AUTH: 409,
     errors.BAD_REQUEST: 400,
     errors.NO_DEVICE: 409,
+    errors.TRACK_CHANGED: 409,
     errors.SPOTIFY_RATE_LIMITED: 429,
 }
 
@@ -44,13 +46,13 @@ def provider_failure(exc: errors.ProviderError) -> HTTPException:
 class LoginBody(BaseModel):
     """Body of the key login."""
 
-    key: str
+    key: str = Field(max_length=1024)
 
 
 class SettingsBody(BaseModel):
     """Settings update; only the fields present are changed, null clears."""
 
-    target_playlist_id: str | None = None
+    target_playlist_id: str | None = Field(default=None, pattern=f"^({PLAYLIST_ID_PATTERN})?$")
     default_device_id: str | None = None
     market: str | None = Field(default=None, pattern=r"^([A-Za-z]{2}|from_token)?$")
 
