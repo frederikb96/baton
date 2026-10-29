@@ -32,9 +32,7 @@ def add_actions(target: APIRouter) -> None:
 
         def make(name: str) -> Any:
             async def handler(request: Request) -> dict[str, Any]:
-                args = (
-                    {"track_id": request.query_params.get("track")} if name in ANCHORED else {}
-                )
+                args = {"track_id": request.query_params.get("track")} if name in ANCHORED else {}
                 reply: Reply = await getattr(app_state(request).controller, name)(**args)
                 return reply.body()
 
