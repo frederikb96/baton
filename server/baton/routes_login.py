@@ -21,7 +21,8 @@ def _page(title: str, body: str) -> HTMLResponse:
     """A small result page that continues to the app through a same-site navigation."""
     content = (
         "<!doctype html><html lang=en><meta charset=utf-8>"
-        '<meta http-equiv=refresh content="2;url=/"><link rel=icon href="data:,">'
+        '<meta http-equiv=refresh content="2;url=/">'
+        '<link rel=icon type=image/png href="/static/icon-32.png">'
         f"<title>{html.escape(title)}</title>"
         '<link rel=stylesheet href="/static/style.css">'
         '<body><main class="card">'

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -314,3 +315,15 @@ async def test_the_page_uses_no_inline_style_or_script(rig: Rig) -> None:
     page = (await rig.client.get("/")).text
     assert "style=" not in page and "<style" not in page
     assert "<script>" not in page and "onclick=" not in page
+
+
+async def test_every_icon_the_page_links_is_served_without_a_login(rig: Rig) -> None:
+    page = (await rig.client.get("/")).text
+    icons = re.findall(r'<link rel="[a-z-]*icon"[^>]*href="(/static/[^"]+)"', page)
+    assert len(icons) >= 4
+    for path in icons:
+        response = await rig.client.get(path)
+        assert response.status_code == 200, path
+        assert response.headers["content-type"] == "image/png", path
+        assert response.content.startswith(b"\x89PNG"), path
+    assert "img-src 'self'" in response.headers["content-security-policy"]
