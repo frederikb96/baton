@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>baton</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header>
+    <h1>baton</h1>
+    <span id="login-pill" class="pill" hidden></span>
+    <button id="logout" class="link" hidden>Sign out</button>
+  </header>
+
+  <main id="login-view" hidden>
+    <form id="login-form" class="card">
+      <h2>Sign in</h2>
+      <label>Access key <input id="login-key" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary">Sign in</button>
+      <p id="login-error" class="error" role="alert"></p>
+    </form>
+  </main>
+
+  <main id="app-view" hidden>
+    <p id="banner" class="banner" role="status" hidden></p>
+
+    <section class="card" id="player">
+      <p id="np-title" class="title">Nothing playing</p>
+      <p id="np-artist" class="artist"></p>
+      <div class="progress"><div id="np-bar"></div></div>
+      <div class="times"><span id="np-pos">0:00</span><span id="np-dur">0:00</span></div>
+      <div class="controls">
+        <button id="btn-prev" aria-label="Previous">&#9198;</button>
+        <button id="btn-play" class="primary" aria-label="Play or pause">&#9654;</button>
+        <button id="btn-next" aria-label="Next">&#9197;</button>
+      </div>
+      <div class="controls wide">
+        <button id="btn-like">Like</button>
+        <button id="btn-playlist">Add to playlist</button>
+      </div>
+      <p id="np-device" class="muted"></p>
+      <p id="msg" class="muted" role="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>Device</h2>
+      <div class="row">
+        <select id="device-select" aria-label="Playback device"></select>
+        <button id="device-switch">Switch</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Recent playlists</h2>
+      <ul id="recent" class="list"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Settings</h2>
+      <label>Target playlist <select id="set-playlist"></select></label>
+      <label>Default device <select id="set-device"></select></label>
+      <label>Market (two letter country code, optional)
+        <input id="set-market" maxlength="9" placeholder="from_token">
+      </label>
+      <button id="set-save" class="primary">Save</button>
+      <p id="set-msg" class="muted" role="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>Watch keys</h2>
+      <ul id="keys" class="list"></ul>
+      <form id="key-form" class="row">
+        <input id="key-name" placeholder="Name, e.g. fenix" maxlength="60" required>
+        <button type="submit">Create key</button>
+      </form>
+      <div id="key-new" hidden>
+        <p>Copy this key now. It is not shown again.</p>
+        <code id="key-value"></code>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Spotify</h2>
+      <p id="sp-status" class="muted"></p>
+      <div class="row">
+        <a id="sp-login" class="button" href="/auth/spotify/login">Log in with Spotify</a>
+        <button id="sp-disconnect">Disconnect</button>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

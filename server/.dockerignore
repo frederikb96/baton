@@ -1,0 +1,10 @@
+.venv
+tests
+**/__pycache__
+.ruff_cache
+.mypy_cache
+.pytest_cache
+*.egg-info
+Dockerfile
+.dockerignore
+compose.example.yaml

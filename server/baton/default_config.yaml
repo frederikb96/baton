@@ -1,0 +1,51 @@
+# Bootstrap configuration: every value here can be overridden by the environment
+# variable BATON_<KEY IN UPPER CASE>. A value of null has no default and must be
+# provided. Anything a user changes while the server runs (target playlist, default
+# device, watch keys) lives in the database, not here.
+
+# Externally visible base URL, e.g. https://baton.example.com. HTTPS, or an
+# http://127.0.0.1:PORT loopback address. Spotify's redirect URI is built from it.
+public_url: null
+
+# key: the web page asks for ui_key and hands out a session cookie.
+# proxy: a reverse proxy authenticates users and sets proxy_user_header.
+auth_mode: key
+
+# Secret that unlocks the web page in key mode (at least 24 characters).
+ui_key: null
+
+# Credentials of your own Spotify developer app.
+spotify_client_id: null
+spotify_client_secret: null
+
+# Directory holding the SQLite database.
+data_dir: /data
+
+# Listen address of the built-in HTTP server.
+host: 0.0.0.0
+port: 8080
+log_level: info
+
+# Take the client address for throttling from the last X-Forwarded-For entry.
+trust_proxy_headers: false
+
+# Header a reverse proxy sets to the authenticated user name (proxy mode).
+proxy_user_header: X-Auth-Request-User
+
+# Lifetime of a web page session in key mode, in days.
+session_days: 30
+
+# Spotify endpoints.
+spotify_api_url: https://api.spotify.com/v1
+spotify_accounts_url: https://accounts.spotify.com
+
+# Pause after a skip before the fresh playback state is read, in milliseconds.
+settle_delay_ms: 300
+
+# Failed key attempts per client within the window lock that client out.
+throttle_max_failures: 10
+throttle_window_seconds: 300
+throttle_lockout_seconds: 300
+
+# How long the recent playlists list is reused, in seconds.
+recent_playlists_cache_seconds: 120

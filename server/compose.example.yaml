@@ -1,0 +1,23 @@
+# Copy next to a .env file holding the BATON_* values from docs/server.md, then:
+#   docker compose up -d
+# The server speaks plain HTTP. Put a TLS-terminating reverse proxy or tunnel in front of it:
+# the watch and Spotify's redirect URI need an HTTPS address.
+services:
+  baton:
+    image: ghcr.io/frederikb96/baton:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - baton-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  baton-data:
