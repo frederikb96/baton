@@ -56,7 +56,7 @@ Spotify needs a market (a two-letter country code) to say which tracks are playa
 
 Two route families, never sharing a credential:
 
-- `/api/watch/` accepts only a valid watch key (`Authorization: Bearer`). Cookies and identity headers are ignored there, and a watch key opens nothing outside it. Keys are created on the web page, shown once, stored hashed and revocable. The key is checked first, so a valid key always works; a client that keeps sending wrong keys is only answered more slowly, never locked out.
+- `/api/watch/` accepts only a valid key (`Authorization: Bearer`). Cookies and identity headers are ignored there, and a key opens nothing outside it. Keys are created on the web page, shown once, stored hashed and revocable. Each key has a scope: a `watch` key (the default, and what every key from before scopes is) opens the watch API; an `agent` key also opens the Spotify relay described in [api.md](api.md#spotify-relay). The scope is chosen when the key is created and can be changed on the page afterwards (`PATCH /api/ui/keys/<id>` with `{"scope": "agent"}` or `"watch"`); the key value stays the same. An agent key is a full Spotify client for the linked account, so give one only to something you trust as much. The key is checked first, so a valid key always works; a client that keeps sending wrong keys is only answered more slowly, never locked out.
 - Everything else (web page, `/api/ui/`, settings, keys, Spotify login) is guarded by the auth mode. Only `/healthz` is open.
 
 Modes:

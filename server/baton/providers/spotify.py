@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from baton import errors
-from baton.providers.base import Device, Playback, Playlist, Provider, Track
+from baton.providers.base import Device, Playback, Playlist, Provider, RelayResponse, Track
 from baton.providers.spotify_accounts import SpotifyAccounts
 
 PAGE_SIZE = 50
@@ -65,15 +65,15 @@ class SpotifyProvider(Provider):
 
     # transport
 
-    async def _request(
+    async def _send(
         self,
         method: str,
         path: str,
         *,
-        params: dict[str, Any] | None = None,
+        params: Any = None,
         json: Any = None,
-        ok: tuple[int, ...] = (200, 201, 202, 204),
     ) -> httpx.Response:
+        """One call with the stored login, retried once with a fresh token after a 401."""
         wait = self._rate_limited_until - self._now()
         if wait > 0:
             raise self._rate_limited(wait)
@@ -96,11 +96,37 @@ class SpotifyProvider(Provider):
             if resp.status_code != 401:
                 break
         assert resp is not None
-        if resp.status_code in ok:
-            return resp
         if resp.status_code == 429:
             self._note_retry_after(resp)
+        return resp
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: Any = None,
+        ok: tuple[int, ...] = (200, 201, 202, 204),
+    ) -> httpx.Response:
+        resp = await self._send(method, path, params=params, json=json)
+        if resp.status_code in ok:
+            return resp
         raise self._error(resp, path)
+
+    async def relay(
+        self, method: str, path: str, params: list[tuple[str, str]], body: Any
+    ) -> RelayResponse:
+        """Forward a call to the Web API; Spotify's answer is returned whatever its status."""
+        resp = await self._send(method, path, params=params or None, json=body)
+        if resp.status_code == 401:
+            raise self._error(resp, path)
+        return RelayResponse(
+            resp.status_code,
+            resp.content,
+            resp.headers.get("content-type"),
+            resp.headers.get("retry-after"),
+        )
 
     def _note_retry_after(self, resp: httpx.Response) -> None:
         """Stop calling Spotify until the pause it asked for has passed."""

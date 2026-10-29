@@ -16,7 +16,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS watch_keys (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, hint TEXT NOT NULL, key_hash TEXT NOT NULL UNIQUE,
-    created_at REAL NOT NULL, last_used_at REAL, revoked_at REAL
+    created_at REAL NOT NULL, last_used_at REAL, revoked_at REAL,
+    scope TEXT NOT NULL DEFAULT 'watch'
 );
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY, created_at REAL NOT NULL, expires_at REAL NOT NULL
@@ -33,6 +34,9 @@ CREATE TABLE IF NOT EXISTS spotify_auth (
 SETTINGS_KEY = "settings"
 UI_KEY_FINGERPRINT = "ui_key_fingerprint"
 KEY_PREFIX = "bk_"
+WATCH_SCOPE = "watch"
+AGENT_SCOPE = "agent"
+KEY_SCOPES = (WATCH_SCOPE, AGENT_SCOPE)
 USED_TOUCH_SECONDS = 60
 
 
@@ -88,6 +92,7 @@ class WatchKey:
     created_at: float
     last_used_at: float | None
     revoked_at: float | None
+    scope: str = WATCH_SCOPE
 
 
 @dataclass(frozen=True)
@@ -116,6 +121,11 @@ class Store:
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(SCHEMA)
+        columns = {row["name"] for row in self._db.execute("PRAGMA table_info(watch_keys)")}
+        if "scope" not in columns:
+            self._db.execute(
+                f"ALTER TABLE watch_keys ADD COLUMN scope TEXT NOT NULL DEFAULT '{WATCH_SCOPE}'"
+            )
 
     def close(self) -> None:
         """Close the database."""
@@ -151,42 +161,63 @@ class Store:
 
     # watch keys
 
-    def create_watch_key(self, name: str) -> tuple[WatchKey, str]:
+    def create_watch_key(self, name: str, scope: str = WATCH_SCOPE) -> tuple[WatchKey, str]:
         """Create a key; the plain value is returned once and only its hash is stored."""
+        if scope not in KEY_SCOPES:
+            raise ValueError(f"unknown key scope {scope!r}")
         plain = KEY_PREFIX + secrets.token_urlsafe(32)
         key_id = secrets.token_hex(4)
         now = self._now()
         self._exec(
-            "INSERT INTO watch_keys (id, name, hint, key_hash, created_at) VALUES (?,?,?,?,?)",
-            (key_id, name, plain[: len(KEY_PREFIX) + 4], hash_secret(plain), now),
+            "INSERT INTO watch_keys (id, name, hint, key_hash, created_at, scope) "
+            "VALUES (?,?,?,?,?,?)",
+            (key_id, name, plain[: len(KEY_PREFIX) + 4], hash_secret(plain), now, scope),
         )
-        return WatchKey(key_id, name, plain[: len(KEY_PREFIX) + 4], now, None, None), plain
+        hint = plain[: len(KEY_PREFIX) + 4]
+        return WatchKey(key_id, name, hint, now, None, None, scope), plain
 
-    def verify_watch_key(self, plain: str) -> bool:
-        """True for an existing, not revoked key; records the use."""
+    def verify_watch_key(self, plain: str) -> str | None:
+        """Scope of an existing, not revoked key (None for any other); records the use."""
         digest = hash_secret(plain)
         rows = self._exec(
-            "SELECT id, key_hash, last_used_at FROM watch_keys "
+            "SELECT id, key_hash, last_used_at, scope FROM watch_keys "
             "WHERE key_hash = ? AND revoked_at IS NULL",
             (digest,),
         )
         if not rows or not hmac.compare_digest(rows[0]["key_hash"], digest):
-            return False
+            return None
         now = self._now()
         last = rows[0]["last_used_at"]
         if last is None or now - last > USED_TOUCH_SECONDS:
             self._exec("UPDATE watch_keys SET last_used_at = ? WHERE id = ?", (now, rows[0]["id"]))
-        return True
+        return str(rows[0]["scope"])
 
     def list_watch_keys(self) -> list[WatchKey]:
         """All keys, newest first."""
         rows = self._exec("SELECT * FROM watch_keys ORDER BY created_at DESC")
         return [
             WatchKey(
-                r["id"], r["name"], r["hint"], r["created_at"], r["last_used_at"], r["revoked_at"]
+                r["id"],
+                r["name"],
+                r["hint"],
+                r["created_at"],
+                r["last_used_at"],
+                r["revoked_at"],
+                r["scope"],
             )
             for r in rows
         ]
+
+    def set_watch_key_scope(self, key_id: str, scope: str) -> bool:
+        """Change the scope of an active key; False when it does not exist or is revoked."""
+        if scope not in KEY_SCOPES:
+            raise ValueError(f"unknown key scope {scope!r}")
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE watch_keys SET scope = ? WHERE id = ? AND revoked_at IS NULL",
+                (scope, key_id),
+            )
+            return cur.rowcount > 0
 
     def revoke_watch_key(self, key_id: str) -> bool:
         """Revoke a key; False when it does not exist or is already revoked."""

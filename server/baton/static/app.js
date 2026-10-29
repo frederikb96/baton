@@ -258,7 +258,18 @@ async function loadKeys() {
   for (const key of keys) {
     const used = key.last_used_at ? new Date(key.last_used_at * 1000).toLocaleString() : "never used";
     const item = el("li");
-    item.append(el("span", `${key.name} (${key.hint}…), ${used}`));
+    item.append(el("span", `${key.name} (${key.hint}…), ${key.scope}, ${used}`));
+    const other = key.scope === "agent" ? "watch" : "agent";
+    const rescope = el("button", other === "agent" ? "Make agent" : "Make watch");
+    rescope.addEventListener("click", async () => {
+      const warning = other === "agent"
+        ? `Give the key "${key.name}" full Spotify access through the relay?`
+        : `Limit the key "${key.name}" to the watch API?`;
+      if (!confirm(warning)) return;
+      await api("PATCH", `/keys/${key.id}`, { scope: other });
+      await loadKeys();
+    });
+    item.append(rescope);
     const revoke = el("button", "Revoke");
     revoke.addEventListener("click", async () => {
       if (!confirm(`Revoke the key "${key.name}"? Watches using it stop working.`)) return;
@@ -272,7 +283,7 @@ async function loadKeys() {
 
 async function createKey(event) {
   event.preventDefault();
-  const result = await api("POST", "/keys", { name: $("key-name").value.trim() });
+  const result = await api("POST", "/keys", { name: $("key-name").value.trim(), scope: $("key-scope").value });
   if (!result.ok) return;
   $("key-value").textContent = result.data.key;
   $("key-new").hidden = false;

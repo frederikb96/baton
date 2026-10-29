@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from baton import __version__, routes_login, routes_ui, routes_watch
+from baton import __version__, routes_login, routes_relay, routes_ui, routes_watch
 from baton.auth import HEALTH_PATH, WATCH_PREFIX, AppState, Throttle, WatchAuthError, proxy_user
 from baton.config import Config
 from baton.controller import Controller
@@ -82,8 +82,8 @@ def create_app(
     async def watch_auth_failed(_: Request, exc: WatchAuthError) -> JSONResponse:
         return JSONResponse(
             {"result": "error", "error": None, "message": exc.message, "state": None},
-            status_code=401,
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=exc.status,
+            headers={"WWW-Authenticate": "Bearer"} if exc.status == 401 else {},
         )
 
     @app.middleware("http")
@@ -106,6 +106,7 @@ def create_app(
     app.add_middleware(BodyLimitMiddleware)
 
     app.include_router(routes_watch.router)
+    app.include_router(routes_relay.router)
     app.include_router(routes_ui.public)
     app.include_router(routes_ui.router)
     app.include_router(routes_login.router)

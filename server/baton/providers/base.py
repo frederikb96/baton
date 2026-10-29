@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,16 @@ class Playlist:
 
     id: str
     name: str
+
+
+@dataclass(frozen=True)
+class RelayResponse:
+    """The answer of the source's API to a relayed call."""
+
+    status: int
+    content: bytes
+    content_type: str | None
+    retry_after: str | None
 
 
 class Provider(ABC):
@@ -132,3 +143,9 @@ class Provider(ABC):
         self, playlist_id: str, *, shuffle: bool, device_id: str | None
     ) -> None:
         """Start a playlist with the given shuffle state, optionally on a device."""
+
+    @abstractmethod
+    async def relay(
+        self, method: str, path: str, params: list[tuple[str, str]], body: Any
+    ) -> RelayResponse:
+        """Forward a call to the source's own API with the stored login."""

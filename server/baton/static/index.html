@@ -70,10 +70,14 @@
     </section>
 
     <section class="card">
-      <h2>Watch keys</h2>
+      <h2>Keys</h2>
       <ul id="keys" class="list"></ul>
       <form id="key-form" class="row">
         <input id="key-name" placeholder="Name, e.g. fenix" maxlength="60" required>
+        <select id="key-scope" aria-label="Key scope">
+          <option value="watch">Watch</option>
+          <option value="agent">Agent (also Spotify relay)</option>
+        </select>
         <button type="submit">Create key</button>
       </form>
       <div id="key-new" hidden>

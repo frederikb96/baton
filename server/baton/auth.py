@@ -18,7 +18,7 @@ from fastapi import HTTPException, Request
 
 from baton.config import Config
 from baton.controller import Controller
-from baton.db import Store
+from baton.db import AGENT_SCOPE, Store
 from baton.providers.spotify_accounts import SpotifyAccounts
 
 if TYPE_CHECKING:
@@ -34,11 +34,12 @@ FAILED_KEY_DELAY_SECONDS = 1.0
 
 
 class WatchAuthError(Exception):
-    """The watch key is missing or invalid."""
+    """The watch key is missing or invalid (401), or valid but not allowed here (403)."""
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, status: int = 401) -> None:
         super().__init__(message)
         self.message = message
+        self.status = status
 
 
 class Throttle:
@@ -128,13 +129,21 @@ async def require_watch_key(request: Request) -> None:
     state = app_state(request)
     client = client_id(request, state.config)
     token = bearer_token(request)
-    if token is not None and state.store.verify_watch_key(token):
+    scope = state.store.verify_watch_key(token) if token is not None else None
+    if scope is not None:
         state.watch_throttle.succeed(client)
+        request.state.key_scope = scope
         return
     state.watch_throttle.fail(client)
     if state.watch_throttle.locked(client):
         await asyncio.sleep(FAILED_KEY_DELAY_SECONDS)
     raise WatchAuthError("Key rejected.")
+
+
+async def require_agent_scope(request: Request) -> None:
+    """Dependency of routes that only agent-scope keys open; runs after ``require_watch_key``."""
+    if request.state.key_scope != AGENT_SCOPE:
+        raise WatchAuthError("This key may not use the Spotify relay.", status=403)
 
 
 def proxy_user(request: Request, config: Config) -> str | None:

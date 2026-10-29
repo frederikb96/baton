@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -61,6 +61,13 @@ class KeyBody(BaseModel):
     """Body of a watch key creation."""
 
     name: str = Field(min_length=1, max_length=60)
+    scope: Literal["watch", "agent"] = "watch"
+
+
+class ScopeBody(BaseModel):
+    """Body of a key scope change."""
+
+    scope: Literal["watch", "agent"]
 
 
 class DeviceBody(BaseModel):
@@ -251,6 +258,7 @@ async def list_keys(request: Request) -> dict[str, Any]:
                 "created_at": k.created_at,
                 "last_used_at": k.last_used_at,
                 "revoked": k.revoked_at is not None,
+                "scope": k.scope,
             }
             for k in keys
         ]
@@ -260,8 +268,16 @@ async def list_keys(request: Request) -> dict[str, Any]:
 @router.post("/keys")
 async def create_key(request: Request, body: KeyBody) -> dict[str, Any]:
     """Create a watch key. The value is in this response only."""
-    key, plain = app_state(request).store.create_watch_key(body.name.strip())
-    return {"id": key.id, "name": key.name, "key": plain}
+    key, plain = app_state(request).store.create_watch_key(body.name.strip(), body.scope)
+    return {"id": key.id, "name": key.name, "scope": key.scope, "key": plain}
+
+
+@router.patch("/keys/{key_id}")
+async def change_key_scope(request: Request, key_id: str, body: ScopeBody) -> dict[str, Any]:
+    """Change what an existing key may do; the key itself stays the same."""
+    if not app_state(request).store.set_watch_key_scope(key_id, body.scope):
+        raise HTTPException(404, "No such active key.")
+    return {"id": key_id, "scope": body.scope}
 
 
 @router.delete("/keys/{key_id}")

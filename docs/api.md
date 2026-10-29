@@ -43,3 +43,14 @@ These extend the contract; clients written against the text above keep working u
 - `state.track_id`: `str | null`, the Spotify id of the playing track, `null` when nothing likable is playing. Clients that do not know the field ignore it.
 - Optional query parameter `track` on `POST /api/watch/like`, `unlike`, `playlist/add` and `playlist/remove`: the `track_id` of the last state the client showed. If a different track is playing now, nothing is changed and the answer is `{"result": "error", "error": "track_changed", ...}` with the fresh `state`, so the client can show the new track and let the user press again. Without the parameter the commands act on whatever is playing, as before.
 - Error code `track_changed`, only ever answered for an anchored request. A client that does not send `track` never sees it.
+
+## Spotify relay
+
+Agent-scope keys (see [server.md](server.md#authentication)) can make any call of the Spotify Web API through the server, which adds its stored Spotify login. Watch-scope keys get `403`; a missing or wrong key gets `401` as everywhere under `/api/watch/`.
+
+- `GET|POST|PUT|DELETE /api/watch/spotify/<path>` is forwarded to `<path>` under the Web API base (`https://api.spotify.com/v1`), with the query string and an optional JSON body. `GET /api/watch/spotify/me/player?market=DE` calls `GET /v1/me/player?market=DE`.
+- Spotify's answer comes back unchanged: status, body and `Retry-After`. Nothing else of the exchange is passed on, so the access token is never visible to the caller, and the server does not log it.
+- Each path segment may only hold letters, digits, `_`, `:` and `-`. Dots, percent escapes and empty segments are refused with `400`, so a path cannot leave the Web API base. A body that is not JSON is refused with `400`.
+- With no usable Spotify login the answer is `409` with `error: "spotify_auth"`; while Spotify has asked for a pause, `429` with `spotify_rate_limited`; an unreachable Spotify gives `502`. These use the envelope `{"result": "error", "error": ..., "message": ..., "state": null}`.
+- The relay does not make Spotify's own limits go away: the app is in development mode, so endpoints Spotify withholds from such apps (for example Spotify-owned playlists) answer as they do for the server itself.
+
