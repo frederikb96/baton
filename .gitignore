@@ -1,0 +1,29 @@
+# private notes (own repository)
+.claude/
+
+# Garmin Connect IQ
+bin/
+*.prg
+*.iq
+*.jungle.bak
+developer_key*
+*.der
+*.pem
+/connectiq-sdk*/
+/sdk/
+/devices/
+manifest.local.xml
+gen/
+
+# local config and secrets
+.env
+.env.*
+!.env.example
+config.local.*
+*.local.json
+
+# tooling
+node_modules/
+.venv/
+__pycache__/
+.DS_Store
