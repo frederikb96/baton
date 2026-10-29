@@ -197,8 +197,7 @@ class Controller {
         Haptics.play(Haptics.MENU);
         _menuDepth = 1;
         _menuUntil = System.getTimer() + MENU_TIMEOUT_MS;
-        var s = state;
-        MenuFlow.openRoot(s == null ? null : s.playlistName);
+        MenuFlow.openRoot();
     }
 
     // A deeper menu level was pushed.

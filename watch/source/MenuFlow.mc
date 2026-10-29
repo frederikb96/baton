@@ -4,15 +4,26 @@ import Toybox.WatchUi;
 
 // The menu opened by holding Up. Every action sends its command and returns to the main screen.
 module MenuFlow {
+    // Menu2 clips a line at the edge of the round screen instead of shortening it.
+    const LABEL_CHARS = 13;
+
+    function chars(text as String) as Number {
+        return text.length();
+    }
+
+    function fit(text as String, maxChars as Number) as String {
+        return TextFit.ellipsize(text, maxChars, new Lang.Method(MenuFlow, :chars));
+    }
+
     function controller() as Controller {
         return (Application.getApp() as BatonApp).controller as Controller;
     }
 
     // Remove-like is the focused item, so holding Up and pressing Start removes the like.
-    function openRoot(playlistName as String?) as Void {
+    function openRoot() as Void {
         var menu = new WatchUi.Menu2({:title => "Baton"});
         menu.addItem(new WatchUi.MenuItem("Remove like", null, :unlike, null));
-        menu.addItem(new WatchUi.MenuItem("Remove from", playlistName == null ? "playlist" : playlistName, :remove, null));
+        menu.addItem(new WatchUi.MenuItem("Off playlist", null, :remove, null));
         menu.addItem(new WatchUi.MenuItem("Playlists", null, :playlists, null));
         WatchUi.pushView(menu, new RootMenuDelegate(), WatchUi.SLIDE_UP);
     }
@@ -60,7 +71,7 @@ class PlaylistsLoader {
         }
         var menu = new WatchUi.Menu2({:title => "Playlists"});
         for (var i = 0; i < list.size(); i++) {
-            menu.addItem(new WatchUi.MenuItem(list[i][1], null, list[i][0], null));
+            menu.addItem(new WatchUi.MenuItem(MenuFlow.fit(list[i][1], MenuFlow.LABEL_CHARS), null, list[i][0], null));
         }
         MenuFlow.controller().menuDeeper();
         WatchUi.pushView(menu, new PlaylistMenuDelegate(), WatchUi.SLIDE_LEFT);
