@@ -50,5 +50,6 @@ code { display: block; padding: .6rem; background: var(--bg); border-radius: .5r
   #recent li > span { flex-basis: 100%; }
   #recent button { flex: 1; }
 }
-#key-form { flex-wrap: wrap; }
-#key-form input { min-width: 8rem; }
+#key-form, #saved-form { flex-wrap: wrap; }
+#key-form input, #saved-form input { min-width: 8rem; }
+#saved-form input { flex: 1; }
