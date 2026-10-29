@@ -105,7 +105,9 @@ async def test_relay_without_a_spotify_login_answers_conflict(rig: Rig) -> None:
 
 async def test_key_scope_is_chosen_on_creation_and_changeable(rig: Rig) -> None:
     await rig.login_ui()
-    created = (await rig.client.post("/api/ui/keys", json={"name": "kai", "scope": "agent"})).json()
+    created = (
+        await rig.client.post("/api/ui/keys", json={"name": "scripts", "scope": "agent"})
+    ).json()
     assert created["scope"] == "agent"
     plain = {"Authorization": f"Bearer {created['key']}"}
     assert (await rig.client.get("/api/watch/spotify/me/player", headers=plain)).status_code == 200
