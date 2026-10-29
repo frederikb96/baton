@@ -1,0 +1,77 @@
+name: Watch
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      watch: ${{ steps.diff.outputs.watch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # anything unclear (tag, new branch, called by another workflow) runs the checks
+          changed=true
+          if [ -n "$BASE" ] && [ "$BASE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git diff --name-only "$BASE" "$GITHUB_SHA" | grep -qE '^(watch/|\.github/workflows/watch\.yml$)' || changed=false
+          fi
+          echo "watch=$changed" >> "$GITHUB_OUTPUT"
+
+  products:
+    needs: changes
+    if: needs.changes.outputs.watch == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      devices: ${{ steps.list.outputs.devices }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        # the manifest is the one list of supported devices
+        run: |
+          devices=$(grep -o 'iq:product id="[^"]*"' watch/manifest.xml | sed 's/.*id="//; s/"$//' | jq -R . | jq -sc .)
+          echo "devices=$devices" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: products
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        device: ${{ fromJSON(needs.products.outputs.devices) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Config
+        run: cp watch/config/Config.mc.example watch/config/Config.mc
+      # Compiles with a throwaway key and strict type checking, then runs the unit tests in the simulator.
+      - uses: matco/action-connectiq-tester@60fd2e8179994e075d3a58c6250f32aa20e2b37b # v1
+        with:
+          path: watch
+          device: ${{ matrix.device }}
+
+  gate:
+    needs: [changes, products, test]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          case " $RESULTS " in *" failure "*|*" cancelled "*) exit 1 ;; esac

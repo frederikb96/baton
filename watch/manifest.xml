@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
+    <iq:application id="88f1b7e6e435411d8d1522d826450fb3" type="watch-app" name="@Strings.AppName" entry="BatonApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="4.2.3">
+        <iq:products>
+            <iq:product id="fenix8solar47mm"/>
+            <iq:product id="fenix8solar51mm"/>
+            <iq:product id="fenix843mm"/>
+            <iq:product id="fenix847mm"/>
+            <iq:product id="fenix8pro47mm"/>
+            <iq:product id="epix2pro47mm"/>
+            <iq:product id="fr265"/>
+            <iq:product id="fr965"/>
+        </iq:products>
+        <iq:permissions>
+            <iq:uses-permission id="Communications"/>
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+        <iq:barrels>
+        </iq:barrels>
+    </iq:application>
+</iq:manifest>

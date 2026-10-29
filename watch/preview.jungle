@@ -1,0 +1,5 @@
+# Same app without the glance view: the simulator then starts the app itself instead of the glance list.
+project.manifest = manifest.xml
+project.typecheck = 3
+base.sourcePath = source;config;test
+base.excludeAnnotations = glanceView
