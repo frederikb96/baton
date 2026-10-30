@@ -97,7 +97,8 @@ function commandsUseTheContractPathsAndMethods(logger as Logger) as Boolean {
         && Command.playlistRemove(null).path.equals("/api/watch/playlist/remove")
         && Command.playPause().path.equals("/api/watch/play-pause")
         && Command.next().path.equals("/api/watch/next")
-        && Command.previous().path.equals("/api/watch/previous")
+        && Command.previousTrack().path.equals("/api/watch/previous-track")
+        && Command.restart().path.equals("/api/watch/restart")
         && state.path.equals("/api/watch/state") && state.method == Communications.HTTP_REQUEST_METHOD_GET && !state.isCommand
         && play.path.equals("/api/watch/playlists/abc/play?mode=shuffle");
 }

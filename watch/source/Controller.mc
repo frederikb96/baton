@@ -139,8 +139,8 @@ class Controller {
             send(Command.playPause());
         } else if (gesture == Gesture.NEXT) {
             send(Command.next());
-        } else if (gesture == Gesture.PREVIOUS) {
-            send(Command.previous());
+        } else if (gesture == Gesture.RESTART) {
+            send(Command.restart());
         } else if (gesture == Gesture.LIKE) {
             send(Command.like(trackId()));
         } else if (gesture == Gesture.PLAYLIST_ADD) {
@@ -178,7 +178,10 @@ class Controller {
             _api.pollSoon();
         }
         if (request.isCommand) {
-            Haptics.play(Haptics.forResult(outcome.kind));
+            var haptic = Haptics.forCommand(request, outcome.kind);
+            if (haptic != null) {
+                Haptics.play(haptic);
+            }
             showToast(Status.toastFor(request, outcome));
         }
         if (_playlistsHandler != null && request.path.equals(Command.playlists().path)) {
@@ -253,7 +256,7 @@ class Controller {
             _wasActive = fullPace;
             Log.line("ctl", "full pace " + fullPace);
         }
-        _api.pollIntervalMs = Pacing.pollIntervalMs(status(), fullPace);
+        _api.pollIntervalMs = Pacing.pollIntervalMs(fullPace);
         _api.tick(now, _active);
         if (now - _lastBatteryAt >= Pacing.BATTERY_LOG_MS) {
             _lastBatteryAt = now;
@@ -276,7 +279,7 @@ class Controller {
         var s = state;
         var progress = progressMs();
         if (s != null && s.isPlaying && progress != null && s.durationMs != null && progress >= (s.durationMs as Number)
-            && now - _stateAt > 1500) {
+            && now - _stateAt > Pacing.TRACK_END_GAP_MS) {
             // the track has run out: the next one is probably playing
             _api.pollSoon();
         }

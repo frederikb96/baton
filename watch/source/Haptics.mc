@@ -2,7 +2,8 @@ import Toybox.Attention;
 import Toybox.Lang;
 
 // The vibration that confirms a command, chosen by what the server answered. Each pattern differs
-// in pulse count or length so it can be told apart through a glove.
+// in pulse count or length so it can be told apart through a glove. A command you hear the effect
+// of vibrates only when it fails.
 module Haptics {
     enum {
         SUCCESS,
@@ -28,6 +29,12 @@ module Haptics {
             return SUCCESS;
         }
         return result == Result.ALREADY ? ALREADY : ERROR;
+    }
+
+    // The pattern a finished command plays, or null for none.
+    function forCommand(request as Request, result as Number) as Number? {
+        var kind = forResult(result);
+        return kind == ERROR || request.confirm ? kind : null;
     }
 
     function play(kind as Number) as Void {

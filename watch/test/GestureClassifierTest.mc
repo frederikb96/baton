@@ -57,20 +57,20 @@ function downSingleWaitsForTheWindow(logger as Logger) as Boolean {
 }
 
 (:test)
-function downDoubleIsPreviousOnly(logger as Logger) as Boolean {
+function downDoubleIsRestartOnly(logger as Logger) as Boolean {
     var c = new GestureClassifier();
     var released = tap(c, WatchUi.KEY_DOWN, 1000, 80);
     released = tap(c, WatchUi.KEY_DOWN, released + 150, 80);
-    return sameGestures(drain(c, released + 2000), [Gesture.PREVIOUS]);
+    return sameGestures(drain(c, released + 2000), [Gesture.RESTART]);
 }
 
 (:test)
-function downTripleIsPreviousThenNext(logger as Logger) as Boolean {
+function downTripleIsRestartThenNext(logger as Logger) as Boolean {
     var c = new GestureClassifier();
     var released = tap(c, WatchUi.KEY_DOWN, 1000, 80);
     released = tap(c, WatchUi.KEY_DOWN, released + 100, 80);
     released = tap(c, WatchUi.KEY_DOWN, released + 100, 80);
-    return sameGestures(drain(c, released + 2000), [Gesture.PREVIOUS, Gesture.NEXT]);
+    return sameGestures(drain(c, released + 2000), [Gesture.RESTART, Gesture.NEXT]);
 }
 
 (:test)
@@ -86,7 +86,7 @@ function secondTapStartedInWindowCountsEvenIfReleasedLate(logger as Logger) as B
     var c = new GestureClassifier();
     var released = tap(c, WatchUi.KEY_DOWN, 1000, 80);
     tap(c, WatchUi.KEY_DOWN, released + c.DOUBLE_WINDOW_MS - 20, 300);
-    return sameGestures(drain(c, 10000), [Gesture.PREVIOUS]);
+    return sameGestures(drain(c, 10000), [Gesture.RESTART]);
 }
 
 (:test)

@@ -6,7 +6,7 @@ module Gesture {
     enum {
         PLAY_PAUSE,
         NEXT,
-        PREVIOUS,
+        RESTART,
         LIKE,
         PLAYLIST_ADD,
         MENU,
@@ -19,7 +19,7 @@ module Gesture {
 // SHORT_MAX_MS counts; a touch-mapped behaviour or a firmware hold never produces a gesture.
 //
 //   Start      short                      play/pause
-//   Down       short / double             next / previous
+//   Down       short / double             next / start of the track
 //   Up         short / double / hold      like / add to playlist / menu
 //   Back       short                      exit
 //
@@ -70,7 +70,7 @@ class GestureClassifier {
         } else if (key == WatchUi.KEY_UP || key == WatchUi.KEY_DOWN) {
             if (_pendingUntil.hasKey(key)) {
                 _pendingUntil.remove(key);
-                _out.add(key == WatchUi.KEY_UP ? Gesture.PLAYLIST_ADD : Gesture.PREVIOUS);
+                _out.add(key == WatchUi.KEY_UP ? Gesture.PLAYLIST_ADD : Gesture.RESTART);
             } else {
                 _pendingUntil[key] = now + DOUBLE_WINDOW_MS;
             }

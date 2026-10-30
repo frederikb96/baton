@@ -33,6 +33,27 @@ function resultsChooseTheirOwnPattern(logger as Logger) as Boolean {
 }
 
 (:test)
+function onlyInaudibleCommandsConfirmSuccess(logger as Logger) as Boolean {
+    var quiet = [Command.playPause(), Command.next(), Command.restart(), Command.previousTrack(),
+        Command.playPlaylist("a", "normal")];
+    for (var i = 0; i < quiet.size(); i++) {
+        if (Haptics.forCommand(quiet[i], Result.OK) != null || Haptics.forCommand(quiet[i], Result.ALREADY) != null
+            || Haptics.forCommand(quiet[i], Result.FAILED) != Haptics.ERROR) {
+            return false;
+        }
+    }
+    var confirmed = [Command.like(null), Command.unlike(null), Command.playlistAdd(null), Command.playlistRemove(null)];
+    for (var i = 0; i < confirmed.size(); i++) {
+        if (Haptics.forCommand(confirmed[i], Result.OK) != Haptics.SUCCESS
+            || Haptics.forCommand(confirmed[i], Result.ALREADY) != Haptics.ALREADY
+            || Haptics.forCommand(confirmed[i], Result.ERROR) != Haptics.ERROR) {
+            return false;
+        }
+    }
+    return true;
+}
+
+(:test)
 function patternsCanBeToldApartByFeel(logger as Logger) as Boolean {
     // success: one short pulse; already: two very short; error: one long; menu: three ticks
     return pulses(Haptics.SUCCESS) == 1 && longestPulse(Haptics.SUCCESS) == 150

@@ -17,7 +17,7 @@ class ApiClient {
 
     // time between answers before the next poll; the owner sets it from what the screen shows, and
     // every command answer also refreshes the state
-    var pollIntervalMs as Number = Pacing.POLL_IDLE_MS;
+    var pollIntervalMs as Number = Pacing.POLL_SLOW_MS;
 
     function initialize(listener as Method(request as Request, outcome as Outcome) as Void) {
         _listener = listener;

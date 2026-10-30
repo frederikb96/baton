@@ -100,12 +100,12 @@ function handle(method: string, path: string, mode: string | null, track: string
       index = (index + 1) % tracks.length
       setPosition(0)
       return reply('ok', { state: state() })
-    case 'POST /api/watch/previous':
-      if (position() > 5000) setPosition(0)
-      else {
-        index = (index + tracks.length - 1) % tracks.length
-        setPosition(0)
-      }
+    case 'POST /api/watch/restart':
+      setPosition(0)
+      return reply('ok', { state: state() })
+    case 'POST /api/watch/previous-track':
+      index = (index + tracks.length - 1) % tracks.length
+      setPosition(0)
       return reply('ok', { state: state() })
     case 'POST /api/watch/like':
       return set(true, liked, true)

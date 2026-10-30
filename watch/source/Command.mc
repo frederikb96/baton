@@ -12,6 +12,8 @@ class Request {
     var pendingText as String;
     var okText as String;
     var alreadyText as String;
+    // vibrate on success too: the command's effect cannot be heard
+    var confirm as Boolean = false;
 
     function initialize(path as String, method as Communications.HttpRequestMethod, isCommand as Boolean,
                         pendingText as String, okText as String, alreadyText as String) {
@@ -40,24 +42,28 @@ module Command {
         return post("next", "Next...", "Next", "Next");
     }
 
-    function previous() as Request {
-        return post("previous", "Previous...", "Previous", "Previous");
+    function restart() as Request {
+        return post("restart", "Restarting...", "Restarted", "Restarted");
+    }
+
+    function previousTrack() as Request {
+        return post("previous-track", "Previous...", "Previous", "Previous");
     }
 
     function like(trackId as String?) as Request {
-        return post(anchored("like", trackId), "Liking...", "Liked", "Already liked");
+        return confirmed(post(anchored("like", trackId), "Liking...", "Liked", "Already liked"));
     }
 
     function unlike(trackId as String?) as Request {
-        return post(anchored("unlike", trackId), "Removing...", "Like removed", "Not liked");
+        return confirmed(post(anchored("unlike", trackId), "Removing...", "Like removed", "Not liked"));
     }
 
     function playlistAdd(trackId as String?) as Request {
-        return post(anchored("playlist/add", trackId), "Adding...", "Added", "Already added");
+        return confirmed(post(anchored("playlist/add", trackId), "Adding...", "Added", "Already added"));
     }
 
     function playlistRemove(trackId as String?) as Request {
-        return post(anchored("playlist/remove", trackId), "Removing...", "Removed", "Not in playlist");
+        return confirmed(post(anchored("playlist/remove", trackId), "Removing...", "Removed", "Not in playlist"));
     }
 
     function playlists() as Request {
@@ -72,6 +78,11 @@ module Command {
     // The id of the track the screen showed: the server refuses the action when another one plays now.
     function anchored(path as String, trackId as String?) as String {
         return trackId == null ? path : path + "?track=" + trackId;
+    }
+
+    function confirmed(request as Request) as Request {
+        request.confirm = true;
+        return request;
     }
 
     function post(path as String, pending as String, ok as String, already as String) as Request {
