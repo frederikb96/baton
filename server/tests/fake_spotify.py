@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode
 
@@ -48,6 +50,10 @@ class FakeSpotify:
     liked: list[str] = field(default_factory=list)
     playlists: dict[str, FakePlaylist] = field(default_factory=dict)
     recent_contexts: list[str] = field(default_factory=list)
+    # Most recent play first: the latest is ``recent_base`` seconds since the epoch, each older
+    # one ten minutes before the previous; ``recent_times`` replaces that spacing.
+    recent_base: float = 1_800_000_000.0
+    recent_times: list[float] | None = None
     context: str | None = None
     refresh_token: str = "refresh-1"
     valid_access: set[str] = field(default_factory=set)
@@ -115,6 +121,7 @@ class FakeSpotify:
             ),
             "pl30000000000000000000": FakePlaylist("pl30000000000000000000", "Sunday morning", []),
         }
+        fake.recent_base = time.time() - 600
         fake.recent_contexts = [
             "pl20000000000000000000",
             "pl10000000000000000000",
@@ -329,15 +336,21 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
 
     @app.get("/v1/me/player/recently-played")
     async def recent() -> dict[str, Any]:
+        times = fake.recent_times or [
+            fake.recent_base - 600 * i for i in range(len(fake.recent_contexts))
+        ]
         items: list[dict[str, Any]] = [
             {
                 "track": {"uri": "spotify:track:t0", "name": "Blue Monday"},
+                "played_at": datetime.fromtimestamp(at, UTC)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
                 "context": {
                     "type": "playlist",
                     "uri": pid if pid.startswith("spotify:") else f"spotify:playlist:{pid}",
                 },
             }
-            for pid in fake.recent_contexts
+            for pid, at in zip(fake.recent_contexts, times, strict=False)
         ]
         items.insert(1, {"track": {"uri": "spotify:track:t1"}, "context": None})
         items.insert(

@@ -30,7 +30,7 @@ Garmin watches already control the music on your phone, and for play, pause and 
 
 - **Like and playlist add that never toggle.** A press that finds the song already liked answers `already` with its own vibration instead of un-liking it. You can mash the button on a bumpy road and the result is always the one you meant. Removing a like is a separate menu entry.
 - **A target playlist.** Double press adds the song to one playlist you picked, for example the one you collect songs to check out later in. Songs already in it are not added twice.
-- **Start a playlist.** The menu lists Liked Songs, the playlists you saved and the ones you played last, and starts one normally, shuffled or with smart shuffle (plain shuffle where Spotify doesn't offer it).
+- **Start a playlist.** The menu lists Liked Songs and the ten playlists you used last (playlists you saved by link count from the moment you add them), and starts one normally, shuffled or with smart shuffle (plain shuffle where Spotify doesn't offer it).
 - **A web page for everything else.** The same server serves a small page for playback, the device, settings and watch keys.
 
 ## How it fits together
@@ -89,7 +89,7 @@ The vibration patterns, the screen and how the app is launched are described in 
   <img src="docs/images/web.png" alt="The web page at desktop width and at phone width" width="85%">
 </p>
 
-The page shows the same state as the watch, switches the playback device, starts Liked Songs, saved and recent playlists, sets the target playlist and the default device, creates and revokes keys (watch keys for the watch, agent keys that also reach the Spotify Web API through the server) and shows how many days the Spotify login has left. The device lists follow Spotify while the page is open, so a phone appears once its Spotify app is running. Spotify logins last six months and can't be extended, so you log in again from here now and then.
+The page shows the same state as the watch, switches the playback device, starts Liked Songs and the recently used playlists, which it lets you rename, hide or save by link, sets the target playlist and the default device, creates and revokes keys (watch keys for the watch, agent keys that also reach the Spotify Web API through the server) and shows how many days the Spotify login has left. The device lists follow Spotify while the page is open, so a phone appears once its Spotify app is running. Spotify logins last six months and can't be extended, so you log in again from here now and then.
 
 ## Docs
 

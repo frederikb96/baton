@@ -13,16 +13,19 @@ from typing import Any, TypeVar
 
 from baton import errors
 from baton.db import Store
-from baton.providers.base import Device, Playback, Playlist, Provider, RecentContext
+from baton.providers.base import Device, Playback, Provider, RecentContext
 
 OK = "ok"
 ALREADY = "already"
 ERROR = "error"
 RESTART_THRESHOLD_MS = 5000
-MAX_RECENT_PLAYLISTS = 15
-# Saved playlists (named by hand) and the whole list the watch gets; its answer must stay small.
+# Recently played playlists that get a name, before hidden ones are taken out.
+MAX_RECENT_PLAYLISTS = 20
+# Saved playlists (named by hand), hidden ones, and the playlists the watch gets after Liked
+# Songs; its answer must stay small.
 MAX_SAVED = 10
-MAX_LISTED = 20
+MAX_HIDDEN = 50
+MAX_LISTED = 10
 LIKED_ID = "liked"
 LIKED_NAME = "Liked Songs"
 # Ids of personal mixes and editorial lists; Spotify does not let a development-mode app read them.
@@ -59,6 +62,34 @@ class State:
     device_name: str | None
     server_time_ms: int
     track_id: str | None = None
+
+
+@dataclass(frozen=True)
+class RecentPlaylist:
+    """A recently played playlist with its name and the time of its latest play."""
+
+    id: str
+    name: str
+    played_at: float
+
+
+@dataclass(frozen=True)
+class Entry:
+    """A playlist as listed: ``name`` is what is shown, ``original`` what it is without a rename."""
+
+    id: str
+    name: str
+    original: str
+    saved: bool = False
+    hidden: bool = False
+
+
+@dataclass(frozen=True)
+class Listing:
+    """The playlists to start from and those that are managed but not on the list."""
+
+    listed: list[Entry]
+    more: list[Entry]
 
 
 @dataclass(frozen=True)
@@ -140,7 +171,8 @@ class Controller:
         self._now = now
         self._settle = settle_delay
         self._recent_ttl = recent_cache_seconds
-        self._recent: tuple[float, list[Playlist]] | None = None
+        self._recent: tuple[float, list[RecentPlaylist]] | None = None
+        self._started: dict[str, float] = {}
         self._names: dict[str, str] = {}
         self._unavailable: dict[str, float] = {}
         self._state_ttl = state_cache_seconds
@@ -369,33 +401,77 @@ class Controller:
             return f"Spotify mix ({recent.track})" if recent.track else "Spotify mix"
         return name
 
-    async def recent_playlists(self) -> list[Playlist]:
+    async def recent_playlists(self) -> list[RecentPlaylist]:
         """Recently played playlists that can be named, most recent first, cached briefly."""
         if self._recent and self._now() - self._recent[0] < self._recent_ttl:
             return self._recent[1]
-        playlists: list[Playlist] = []
+        playlists: list[RecentPlaylist] = []
         for recent in await self._provider.recent_playlist_contexts(RECENT_CANDIDATES):
             name = await self._recent_name(recent)
             if name is not None:
-                playlists.append(Playlist(recent.id, name))
+                playlists.append(RecentPlaylist(recent.id, name, recent.played_at))
             if len(playlists) >= MAX_RECENT_PLAYLISTS:
                 break
         self._recent = (self._now(), playlists)
         return playlists
 
-    async def listed_playlists(self) -> list[Playlist]:
-        """Liked Songs, the saved playlists, then the recent ones, without repeats."""
-        listed = [Playlist(LIKED_ID, LIKED_NAME)]
-        listed += [Playlist(p.id, p.name) for p in self._store.get_settings().saved_playlists]
-        taken = {p.id for p in listed}
-        listed += [p for p in await self.recent_playlists() if p.id not in taken]
-        return listed[:MAX_LISTED]
+    async def listing(self) -> Listing:
+        """The most recently used playlists and the managed ones that did not make the list.
+
+        A playlist was used when Spotify last played from it, when it was started here, or, for
+        a saved one, when it was added, whichever is latest. Hidden playlists never make the list.
+        """
+        settings = self._store.get_settings()
+        hidden = {ref.id for ref in settings.hidden_playlists}
+        added = {p.id: p.added_at for p in settings.saved_playlists}
+        saved = {p.id: p.name for p in settings.saved_playlists}
+        names = dict(saved)
+        played: dict[str, float] = {}
+        for recent in await self.recent_playlists():
+            names.setdefault(recent.id, recent.name)
+            played[recent.id] = recent.played_at
+        used = {
+            pid: max(added.get(pid, 0.0), played.get(pid, 0.0), self._started.get(pid, 0.0))
+            for pid in names
+        }
+
+        def entry(pid: str) -> Entry:
+            return Entry(
+                pid, settings.playlist_names.get(pid, names[pid]), names[pid], pid in saved
+            )
+
+        ranked = [pid for pid in sorted(names, key=lambda pid: -used[pid]) if pid not in hidden]
+        listed = [entry(pid) for pid in ranked[:MAX_LISTED]]
+        more = [entry(pid) for pid in ranked[MAX_LISTED:] if pid in saved]
+        more += [
+            Entry(
+                ref.id,
+                settings.playlist_names.get(ref.id, ref.name),
+                ref.name,
+                ref.id in saved,
+                True,
+            )
+            for ref in settings.hidden_playlists
+        ]
+        return Listing(listed, more)
 
     @guarded
-    async def playlists(self) -> Reply:
-        """Reply carrying the playlists to start from."""
-        items = [{"id": p.id, "name": p.name} for p in await self.listed_playlists()]
-        return Reply(OK, extra={"playlists": items})
+    async def playlists(self, *, detailed: bool = False) -> Reply:
+        """Reply carrying the playlists to start from, Liked Songs first.
+
+        The watch gets ``id`` and ``name`` only; ``detailed`` adds what the web page needs to
+        manage them, and the managed playlists that are not on the list.
+        """
+        listing = await self.listing()
+        items: list[dict[str, Any]] = [{"id": LIKED_ID, "name": LIKED_NAME}]
+        if not detailed:
+            items += [{"id": e.id, "name": e.name} for e in listing.listed]
+            return Reply(OK, extra={"playlists": items})
+        items[0]["fixed"] = True
+        items += [dataclasses.asdict(e) for e in listing.listed]
+        return Reply(
+            OK, extra={"playlists": items, "more": [dataclasses.asdict(e) for e in listing.more]}
+        )
 
     @serialized
     @guarded
@@ -414,5 +490,7 @@ class Controller:
             await self._provider.start_liked(shuffle=shuffle, device_id=device_id)
         else:
             await self._provider.start_playlist(playlist_id, shuffle=shuffle, device_id=device_id)
+        if playlist_id != LIKED_ID:
+            self._started[playlist_id] = self._now()
         state = await self._fresh()
         return Reply(OK, message=SMART_FALLBACK_MESSAGE if mode == "smart" else None, state=state)

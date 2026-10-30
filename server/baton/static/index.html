@@ -58,13 +58,14 @@
 
     <section class="card">
       <h2>Playlists</h2>
+      <p class="muted">Liked Songs, then the ten playlists used last: the list on the watch.</p>
       <ul id="recent" class="list"></ul>
-    </section>
-
-    <section class="card">
-      <h2>Saved playlists</h2>
-      <p class="muted">Spotify lists neither the playlists Spotify made nor the ones saved from it, so add them here by link. They show after Liked Songs, on the watch too.</p>
-      <ul id="saved" class="list"></ul>
+      <details id="more-box" hidden>
+        <summary>Saved and hidden (<span id="more-count"></span>)</summary>
+        <ul id="more" class="list"></ul>
+      </details>
+      <h3>Add a playlist</h3>
+      <p class="muted">Spotify lists neither the playlists it made nor the ones saved from it, so add them here by link. A new one starts at the top of the list.</p>
       <form id="saved-form" class="row">
         <input id="saved-name" placeholder="Name, e.g. Feel Good Indie" maxlength="80" required>
         <input id="saved-link" placeholder="Spotify link or URI" required>

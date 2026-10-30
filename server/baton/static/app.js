@@ -178,7 +178,6 @@ async function loadStatus() {
   $("sp-login").textContent = sp.linked ? "Log in again" : "Log in with Spotify";
   $("sp-disconnect").hidden = !sp.linked;
   settings = result.data.settings;
-  renderSaved();
   return result.data;
 }
 
@@ -224,60 +223,117 @@ async function saveSettings() {
   }
 }
 
+// playlists -----------------------------------------------------------------------------
+
+// The list is the watch's: Liked Songs, then the playlists used last. The server also names the
+// saved ones that did not make it and the hidden ones, which are managed from the same card.
 async function loadRecent() {
   const result = await api("GET", "/playlists/recent");
   const list = $("recent");
   list.replaceChildren();
+  $("more-box").hidden = true;
   if (!result.ok || result.data.result !== "ok") {
     list.append(el("li", result.data && result.data.message ? result.data.message : "Not available.", "muted"));
     return;
   }
-  for (const playlist of result.data.playlists) {
-    const item = el("li");
-    item.append(el("span", playlist.name));
-    for (const [mode, label] of [["normal", "Play"], ["shuffle", "Shuffle"], ["smart", "Smart"]]) {
-      const button = el("button", label);
+  for (const playlist of result.data.playlists) list.append(playlistItem(playlist));
+  const more = $("more");
+  more.replaceChildren();
+  for (const playlist of result.data.more) more.append(playlistItem(playlist));
+  $("more-count").textContent = String(result.data.more.length);
+  $("more-box").hidden = result.data.more.length === 0;
+}
+
+function playlistItem(playlist) {
+  const item = el("li");
+  const label = el("span", playlist.name);
+  if (playlist.original && playlist.original !== playlist.name) {
+    label.append(el("small", ` was ${playlist.original}`, "muted"));
+  }
+  item.append(label);
+  if (!playlist.hidden) {
+    for (const [mode, text] of [["normal", "Play"], ["shuffle", "Shuffle"], ["smart", "Smart"]]) {
+      const button = el("button", text);
       button.addEventListener("click", async () => {
         applyReply(await api("POST", `/playlists/${encodeURIComponent(playlist.id)}/play?mode=${mode}`));
+        await loadRecent();
       });
       item.append(button);
     }
-    list.append(item);
   }
+  if (!playlist.fixed) item.append(manageButtons(item, label, playlist));
+  return item;
 }
 
-// saved playlists -----------------------------------------------------------------------
+function manageButtons(item, label, playlist) {
+  const box = el("span", undefined, "manage");
+  const rename = el("button", "Rename", "quiet");
+  rename.addEventListener("click", () => editName(item, label, playlist));
+  const drop = el("button", playlist.hidden ? "Show again" : playlist.saved ? "Remove" : "Hide", "quiet");
+  drop.addEventListener("click", () => {
+    if (playlist.hidden) return unhide(playlist.id);
+    return playlist.saved ? removeSaved(playlist.id) : hide(playlist);
+  });
+  box.append(...(playlist.hidden ? [drop] : [rename, drop]));
+  return box;
+}
+
+function editName(item, label, playlist) {
+  const input = el("input");
+  input.value = playlist.name;
+  input.maxLength = 80;
+  input.setAttribute("aria-label", `Name of ${playlist.original}`);
+  const save = el("button", "Save");
+  const cancel = el("button", "Cancel");
+  const form = el("form", undefined, "row");
+  form.append(input, save, cancel);
+  save.type = "submit";
+  cancel.type = "button";
+  cancel.addEventListener("click", loadRecent);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    return rename(playlist, input.value.trim());
+  });
+  item.replaceChildren(form);
+  input.focus();
+  input.select();
+}
+
+// A name equal to the playlist's own, or an empty one, drops the rename.
+function rename(playlist, name) {
+  const names = { ...(settings.playlist_names || {}) };
+  if (name && name !== playlist.original) names[playlist.id] = name;
+  else delete names[playlist.id];
+  return updatePlaylists({ playlist_names: names });
+}
+
+function hide(playlist) {
+  const hidden = [...(settings.hidden_playlists || []), { id: playlist.id, name: playlist.original }];
+  return updatePlaylists({ hidden_playlists: hidden });
+}
+
+function unhide(id) {
+  return updatePlaylists({ hidden_playlists: (settings.hidden_playlists || []).filter((p) => p.id !== id) });
+}
+
+function removeSaved(id) {
+  return updatePlaylists({ saved_playlists: (settings.saved_playlists || []).filter((p) => p.id !== id) });
+}
+
+async function updatePlaylists(body) {
+  const result = await api("PUT", "/settings", body);
+  $("saved-msg").textContent = result.ok ? "" : detail(result);
+  if (!result.ok) return false;
+  settings = result.data;
+  await loadRecent();
+  return true;
+}
 
 // The id out of a playlist link (also the /user/<name>/playlist/ form), a spotify: URI or a
 // bare id; null when it is none of them. Playlist ids are 22 base62 characters.
 function playlistId(text) {
   const match = text.trim().match(/^(?:https?:\/\/open\.spotify\.com\/(?:[^/?#]+\/)*playlist\/|spotify:(?:user:[^:]+:)?playlist:)?([A-Za-z0-9]{22})(?:[?/#].*)?$/);
   return match ? match[1] : null;
-}
-
-function renderSaved() {
-  const list = $("saved");
-  list.replaceChildren();
-  const saved = settings.saved_playlists || [];
-  if (saved.length === 0) list.append(el("li", "None yet.", "muted"));
-  for (const playlist of saved) {
-    const item = el("li");
-    item.append(el("span", playlist.name));
-    const remove = el("button", "Remove");
-    remove.addEventListener("click", () => saveSaved(saved.filter((p) => p.id !== playlist.id)));
-    item.append(remove);
-    list.append(item);
-  }
-}
-
-async function saveSaved(playlists) {
-  const result = await api("PUT", "/settings", { saved_playlists: playlists });
-  $("saved-msg").textContent = result.ok ? "" : detail(result);
-  if (!result.ok) return false;
-  settings = result.data;
-  renderSaved();
-  await loadRecent();
-  return true;
 }
 
 async function addSaved(event) {
@@ -289,7 +345,7 @@ async function addSaved(event) {
   }
   const name = $("saved-name").value.trim();
   const others = (settings.saved_playlists || []).filter((p) => p.id !== id);
-  if (await saveSaved([...others, { id, name }])) {
+  if (await updatePlaylists({ saved_playlists: [...others, { id, name }] })) {
     $("saved-name").value = "";
     $("saved-link").value = "";
   }

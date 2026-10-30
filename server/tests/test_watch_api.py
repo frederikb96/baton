@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from baton.db import Ref
+from baton.db import Ref, SavedPlaylist
 from tests.conftest import Rig
 
 ENVELOPE_KEYS = {"result", "error", "message", "state"}
@@ -338,13 +338,13 @@ async def test_recent_playlists_dedupe_cache_and_limit(rig: Rig) -> None:
     assert len([c for c in rig.fake.calls if c[1] == "/v1/playlists/pl30000000000000000000"]) == 1
 
 
-async def test_recent_playlists_limit_is_fifteen(rig: Rig) -> None:
+async def test_recent_playlists_limit_is_ten(rig: Rig) -> None:
     for i in range(30):
         from tests.fake_spotify import FakePlaylist
 
         rig.fake.playlists[f"p{i}"] = FakePlaylist(f"p{i}", f"List {i}")
     rig.fake.recent_contexts = [f"p{i}" for i in range(30)]
-    assert len(await recent_entries(rig)) == 15
+    assert [p["id"] for p in await recent_entries(rig)] == [f"p{i}" for i in range(10)]
 
 
 async def test_recent_playlists_leave_out_ones_that_cannot_be_named(rig: Rig) -> None:
@@ -365,7 +365,7 @@ async def test_recent_playlists_fill_up_past_unnamable_ones(rig: Rig) -> None:
     for i in range(20):
         rig.fake.playlists[f"p{i}"] = FakePlaylist(f"p{i}", f"List {i}")
     rig.fake.recent_contexts = ["gone1", "gone2", *[f"p{i}" for i in range(20)]]
-    assert [p["id"] for p in await recent_entries(rig)] == [f"p{i}" for i in range(15)]
+    assert [p["id"] for p in await recent_entries(rig)] == [f"p{i}" for i in range(10)]
 
 
 async def test_recent_playlist_played_with_smart_shuffle_is_the_same_playlist(rig: Rig) -> None:
@@ -396,27 +396,123 @@ async def test_unreadable_spotify_mix_is_listed_with_a_track_as_its_label(rig: R
     ]
 
 
-async def test_saved_playlists_come_after_liked_songs_and_name_mixes(rig: Rig) -> None:
-    rig.fake.recent_contexts = ["37i9dQZF1EXAMPLEONE100", "pl10000000000000000000"]
-    rig.settings(saved_playlists=(Ref("37i9dQZF1EXAMPLEONE100", "Daily Mix 1"),))
-    body = await call(rig, "GET", "playlists")
-    assert body["playlists"] == [
-        LIKED,
-        {"id": "37i9dQZF1EXAMPLEONE100", "name": "Daily Mix 1"},
-        {"id": "pl10000000000000000000", "name": "My Shazam"},
+NOW = 1_800_000_000.0
+MIX = "37i9dQZF1EXAMPLEONE100"
+CYCLING, SHAZAM, SUNDAY = (f"pl{n}0000000000000000000" for n in (2, 1, 3))
+
+
+async def listed_ids(rig: Rig) -> list[str]:
+    """Ids of the playlists answer, Liked Songs left out."""
+    return [p["id"] for p in await recent_entries(rig)]
+
+
+async def test_playlists_follow_last_use_whether_saved_or_not(rig: Rig) -> None:
+    rig.fake.recent_contexts = [CYCLING, SHAZAM, SUNDAY]
+    rig.fake.recent_times = [NOW - 600, NOW - 3000, NOW - 9000]
+    rig.settings(saved_playlists=(SavedPlaylist(MIX, "Daily Mix 1", NOW - 5000),))
+    assert await listed_ids(rig) == [CYCLING, SHAZAM, MIX, SUNDAY]
+
+
+async def test_saved_playlist_never_played_ranks_by_the_time_it_was_added(rig: Rig) -> None:
+    rig.fake.recent_contexts = [CYCLING, SUNDAY]
+    rig.fake.recent_times = [NOW - 600, NOW - 9000]
+    rig.settings(
+        saved_playlists=(
+            SavedPlaylist("s1", "Added today", NOW - 60),
+            SavedPlaylist("s2", "Old", 1.0),
+        )
+    )
+    assert await listed_ids(rig) == ["s1", CYCLING, SUNDAY, "s2"]
+
+
+async def test_saved_playlist_from_before_adding_was_timed_sorts_last(rig: Rig) -> None:
+    rig.fake.recent_contexts = [CYCLING]
+    rig.settings(saved_playlists=(SavedPlaylist("s1", "Untimed", 0.0),))
+    assert await listed_ids(rig) == [CYCLING, "s1"]
+
+
+async def test_a_playlist_started_here_moves_up_before_spotify_reports_it(rig: Rig) -> None:
+    rig.fake.recent_contexts = [CYCLING, SHAZAM, SUNDAY]
+    assert await listed_ids(rig) == [CYCLING, SHAZAM, SUNDAY]
+    rig.clock.t += 30
+    await call(rig, "POST", f"playlists/{SUNDAY}/play")
+    assert await listed_ids(rig) == [SUNDAY, CYCLING, SHAZAM]
+    await call(rig, "POST", "playlists/liked/play")
+    assert await listed_ids(rig) == [SUNDAY, CYCLING, SHAZAM]
+
+
+async def test_hidden_playlists_are_left_out_and_the_list_fills_up(rig: Rig) -> None:
+    from tests.fake_spotify import FakePlaylist
+
+    for i in range(12):
+        rig.fake.playlists[f"p{i}"] = FakePlaylist(f"p{i}", f"List {i}")
+    rig.fake.recent_contexts = [f"p{i}" for i in range(12)]
+    rig.settings(hidden_playlists=(Ref("p0", "List 0"), Ref("p3", "List 3")))
+    assert await listed_ids(rig) == [f"p{i}" for i in (1, 2, 4, 5, 6, 7, 8, 9, 10, 11)]
+
+
+async def test_a_rename_beats_the_name_of_a_mix_and_of_a_saved_playlist(rig: Rig) -> None:
+    rig.fake.recent_contexts = [MIX, CYCLING]
+    rig.settings(
+        saved_playlists=(SavedPlaylist(CYCLING, "Saved name", NOW),),
+        playlist_names={MIX: "Daily Mix 1", CYCLING: "Bike"},
+    )
+    assert await recent_entries(rig) == [
+        {"id": CYCLING, "name": "Bike"},
+        {"id": MIX, "name": "Daily Mix 1"},
     ]
 
 
-async def test_list_is_capped_with_liked_songs_and_saved_playlists_first(rig: Rig) -> None:
+async def test_watch_entries_carry_nothing_but_id_and_name(rig: Rig) -> None:
+    rig.settings(
+        saved_playlists=(SavedPlaylist("s1", "Saved", NOW),),
+        hidden_playlists=(Ref(SUNDAY, "Sunday morning"),),
+    )
+    body = await call(rig, "GET", "playlists")
+    assert body["playlists"] and all(set(p) == {"id", "name"} for p in body["playlists"])
+    assert set(body) == ENVELOPE_KEYS | {"playlists"}
+
+
+async def test_page_list_says_what_it_needs_to_manage_entries(rig: Rig) -> None:
+    from tests.fake_spotify import FakePlaylist
+
+    for i in range(12):
+        rig.fake.playlists[f"p{i}"] = FakePlaylist(f"p{i}", f"List {i}")
+    rig.fake.recent_contexts = [f"p{i}" for i in range(12)]
+    rig.settings(
+        saved_playlists=(SavedPlaylist("old", "Old save", 1.0),),
+        playlist_names={"p1": "First"},
+        hidden_playlists=(Ref("p5", "List 5"),),
+    )
+    await rig.login_ui()
+    body = (await rig.client.get("/api/ui/playlists/recent")).json()
+    assert body["playlists"][0] == {"id": "liked", "name": "Liked Songs", "fixed": True}
+    shown = {p["id"]: p for p in body["playlists"][1:]}
+    assert len(shown) == 10 and "p5" not in shown
+    assert shown["p1"] == {
+        "id": "p1",
+        "name": "First",
+        "original": "List 1",
+        "saved": False,
+        "hidden": False,
+    }
+    assert body["more"] == [
+        {"id": "old", "name": "Old save", "original": "Old save", "saved": True, "hidden": False},
+        {"id": "p5", "name": "List 5", "original": "List 5", "saved": False, "hidden": True},
+    ]
+
+
+async def test_list_is_liked_songs_and_at_most_ten_more(rig: Rig) -> None:
     from tests.fake_spotify import FakePlaylist
 
     for i in range(30):
         rig.fake.playlists[f"p{i}"] = FakePlaylist(f"p{i}", f"List {i}")
     rig.fake.recent_contexts = [f"p{i}" for i in range(30)]
-    rig.settings(saved_playlists=tuple(Ref(f"s{i}", f"Saved {i}") for i in range(10)))
+    rig.settings(
+        saved_playlists=tuple(SavedPlaylist(f"s{i}", f"Saved {i}", NOW - 60 * i) for i in range(10))
+    )
     ids = [p["id"] for p in (await call(rig, "GET", "playlists"))["playlists"]]
-    assert len(ids) == 20
-    assert ids[:11] == ["liked", *[f"s{i}" for i in range(10)]]
+    assert len(ids) == 11 and ids[0] == "liked"
 
 
 @pytest.mark.parametrize(("mode", "shuffled"), [("normal", False), ("shuffle", True)])

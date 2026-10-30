@@ -9,7 +9,7 @@ import secrets
 import sqlite3
 import threading
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 SCHEMA = """
@@ -70,13 +70,28 @@ class Ref:
 
 
 @dataclass(frozen=True)
+class SavedPlaylist:
+    """A playlist listed by name whatever Spotify says about it, with the time it was added."""
+
+    id: str
+    name: str
+    added_at: float = 0.0
+
+
+@dataclass(frozen=True)
 class UserSettings:
-    """Runtime settings changed through the API and the web page."""
+    """Runtime settings changed through the API and the web page.
+
+    ``playlist_names`` maps a playlist id to the name shown instead of its own; ``hidden_playlists``
+    are kept out of the playlist list, with the name they had when hidden.
+    """
 
     target_playlist: Ref | None = None
     default_device: Ref | None = None
     market: str | None = None
-    saved_playlists: tuple[Ref, ...] = ()
+    saved_playlists: tuple[SavedPlaylist, ...] = ()
+    playlist_names: dict[str, str] = field(default_factory=dict)
+    hidden_playlists: tuple[Ref, ...] = ()
 
     def to_json(self) -> dict[str, object]:
         """Plain dict for the API."""
@@ -158,9 +173,18 @@ class Store:
             item = data.get(name)
             return Ref(item["id"], item["name"]) if item else None
 
-        saved = tuple(Ref(item["id"], item["name"]) for item in data.get("saved_playlists") or [])
+        saved = tuple(
+            SavedPlaylist(item["id"], item["name"], float(item.get("added_at") or 0.0))
+            for item in data.get("saved_playlists") or []
+        )
+        hidden = tuple(Ref(item["id"], item["name"]) for item in data.get("hidden_playlists") or [])
         return UserSettings(
-            ref("target_playlist"), ref("default_device"), data.get("market"), saved
+            ref("target_playlist"),
+            ref("default_device"),
+            data.get("market"),
+            saved,
+            dict(data.get("playlist_names") or {}),
+            hidden,
         )
 
     def save_settings(self, settings: UserSettings) -> None:

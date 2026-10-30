@@ -59,10 +59,11 @@ class Playlist:
 
 @dataclass(frozen=True)
 class RecentContext:
-    """A playlist something was recently played from, with one of those tracks."""
+    """A playlist something was recently played from: its latest play and the track played."""
 
     id: str
     track: str
+    played_at: float
 
 
 @dataclass(frozen=True)

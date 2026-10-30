@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -42,6 +43,14 @@ def _first_artist(item: dict[str, Any]) -> str | None:
         return ", ".join(names)
     show = item.get("show") or {}
     return show.get("name") or item.get("publisher")
+
+
+def _epoch(stamp: object) -> float:
+    """Seconds since the epoch of an ISO 8601 timestamp, 0 when it is missing or unreadable."""
+    try:
+        return datetime.fromisoformat(str(stamp)).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def _device(raw: dict[str, Any]) -> Device:
@@ -358,17 +367,18 @@ class SpotifyProvider(Provider):
         resp = await self._request(
             "GET", f"{PLAYER_PATH}/recently-played", params={"limit": PAGE_SIZE}
         )
-        seen: dict[str, str] = {}
+        seen: dict[str, tuple[str, float]] = {}
         for entry in resp.json().get("items", []):
             context = (entry or {}).get("context") or {}
             match = PLAYLIST_CONTEXT.match(str(context.get("uri") or ""))
             if context.get("type") != "playlist" or not match:
                 continue
             if match[1] not in seen:
-                seen[match[1]] = str(((entry or {}).get("track") or {}).get("name") or "")
+                track = str(((entry or {}).get("track") or {}).get("name") or "")
+                seen[match[1]] = (track, _epoch((entry or {}).get("played_at")))
             if len(seen) >= limit:
                 break
-        return [RecentContext(playlist_id, track) for playlist_id, track in seen.items()]
+        return [RecentContext(pid, track, at) for pid, (track, at) in seen.items()]
 
     async def _shuffle_then_play(
         self, body: dict[str, Any], *, shuffle: bool, device_id: str | None

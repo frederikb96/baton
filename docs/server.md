@@ -43,12 +43,12 @@ Bootstrap values only. Each is read from the environment variable `BATON_` plus 
 | `BATON_THROTTLE_MAX_FAILURES` | Failed attempts within the window that lock a client out of the web page login, and that start slowing down rejected watch keys. |
 | `BATON_THROTTLE_WINDOW_SECONDS` | Window in which failures are counted. |
 | `BATON_THROTTLE_LOCKOUT_SECONDS` | Length of a login lockout. |
-| `BATON_RECENT_PLAYLISTS_CACHE_SECONDS` | How long the recent playlists list is reused. |
+| `BATON_RECENT_PLAYLISTS_CACHE_SECONDS` | How long Spotify's recently played playlists are reused for the playlist list. |
 | `BATON_STATE_CACHE_SECONDS` | How long a playback state read is shared by requests that arrive together or right after each other. |
 
 The server refuses to start when a required value is missing or invalid and says which one. Other `BATON_*` variables are ignored, so the service-link variables Kubernetes injects for a Service named `baton` (`BATON_PORT=tcp://…`, `BATON_SERVICE_HOST`, …) do not interfere; that is why the listen settings are called `BATON_LISTEN_HOST` and `BATON_LISTEN_PORT`.
 
-Everything a user changes while the server runs lives in the database and is set through the web page or the API: target playlist, saved playlists, default playback device, market and the watch keys with their scope.
+Everything a user changes while the server runs lives in the database and is set through the web page or the API: target playlist, saved, renamed and hidden playlists, default playback device, market and the watch keys with their scope.
 
 Spotify needs a market (a two-letter country code) to say which tracks are playable; the server asks for `from_token`, which Spotify resolves from the login, so nothing has to be set. To pin one anyway, change the stored setting through the API while signed in to the page, for example `PUT /api/ui/settings` with `{"market": "DE"}` (`null` goes back to the login's own).
 
@@ -70,7 +70,7 @@ Request bodies on `/api/ui/` and `/api/watch/` are capped at 16 KiB (`413` above
 
 ## Web page API
 
-The page uses `/api/ui/`: `session`, `login`, `logout`, `status`, `state`, the same command paths as the watch API, `device`, `playlists/recent`, `playlists/<id>/play`, `spotify/playlists`, `spotify/devices`, `spotify/disconnect`, `settings` (including `saved_playlists`) and `keys` (`PATCH keys/<id>` changes a key's scope). It is meant for the page, not as a stable interface. The Spotify login starts with `POST /auth/spotify/login`, which answers `{"url": …}` for the page to open, and ends at the callback `/auth/spotify/callback`. It is a POST so that it passes the same-origin check above and a link on another site cannot start it.
+The page uses `/api/ui/`: `session`, `login`, `logout`, `status`, `state`, the same command paths as the watch API, `device`, `playlists/recent`, `playlists/<id>/play`, `spotify/playlists`, `spotify/devices`, `spotify/disconnect`, `settings` (including `saved_playlists`, `playlist_names` and `hidden_playlists`) and `keys` (`PATCH keys/<id>` changes a key's scope). It is meant for the page, not as a stable interface. The Spotify login starts with `POST /auth/spotify/login`, which answers `{"url": …}` for the page to open, and ends at the callback `/auth/spotify/callback`. It is a POST so that it passes the same-origin check above and a link on another site cannot start it.
 
 ## Development
 

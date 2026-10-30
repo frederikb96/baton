@@ -169,9 +169,10 @@ async def test_saved_playlists_round_trip_and_survive_other_changes(rig: Rig) ->
     ]
     resp = await rig.client.put("/api/ui/settings", json={"saved_playlists": saved})
     assert resp.status_code == 200
+    added = rig.clock()
     assert resp.json()["saved_playlists"] == [
-        {"id": "37i9dQZF1EXAMPLEONE100", "name": "Daily Mix 1"},
-        {"id": "5Pplaylist000000000000", "name": "Feel Good Indie again"},
+        {"id": "37i9dQZF1EXAMPLEONE100", "name": "Daily Mix 1", "added_at": added},
+        {"id": "5Pplaylist000000000000", "name": "Feel Good Indie again", "added_at": added},
     ]
     other = await rig.client.put("/api/ui/settings", json={"market": "de"})
     assert len(other.json()["saved_playlists"]) == 2
@@ -180,6 +181,59 @@ async def test_saved_playlists_round_trip_and_survive_other_changes(rig: Rig) ->
     assert names[:3] == ["Liked Songs", "Daily Mix 1", "Feel Good Indie again"]
     cleared = await rig.client.put("/api/ui/settings", json={"saved_playlists": []})
     assert cleared.json()["saved_playlists"] == []
+
+
+async def test_saving_again_keeps_when_a_playlist_was_added(rig: Rig) -> None:
+    await rig.login_ui()
+    first = [{"id": "5Pplaylist000000000000", "name": "Feel Good Indie"}]
+    await rig.client.put("/api/ui/settings", json={"saved_playlists": first})
+    rig.clock.t += 3600
+    second = [*first, {"id": "6Pplaylist000000000000", "name": "Newer"}]
+    resp = await rig.client.put("/api/ui/settings", json={"saved_playlists": second})
+    stamps = {p["id"]: p["added_at"] for p in resp.json()["saved_playlists"]}
+    assert stamps["6Pplaylist000000000000"] - stamps["5Pplaylist000000000000"] == 3600
+
+
+async def test_renames_and_hidden_playlists_round_trip_and_survive_other_changes(rig: Rig) -> None:
+    await rig.login_ui()
+    body = {
+        "playlist_names": {"37i9dQZF1EXAMPLEONE100": " Daily Mix 1 "},
+        "hidden_playlists": [{"id": "5Pplaylist000000000000", "name": "Feel Good Indie"}],
+    }
+    resp = await rig.client.put("/api/ui/settings", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["playlist_names"] == {"37i9dQZF1EXAMPLEONE100": "Daily Mix 1"}
+    assert resp.json()["hidden_playlists"] == body["hidden_playlists"]
+    other = (await rig.client.put("/api/ui/settings", json={"market": "de"})).json()
+    assert other["playlist_names"] and other["hidden_playlists"]
+    cleared = await rig.client.put(
+        "/api/ui/settings", json={"playlist_names": {}, "hidden_playlists": []}
+    )
+    assert cleared.json()["playlist_names"] == {} and cleared.json()["hidden_playlists"] == []
+
+
+async def test_saving_a_hidden_playlist_brings_it_back(rig: Rig) -> None:
+    await rig.login_ui()
+    ref = {"id": "5Pplaylist000000000000", "name": "Feel Good Indie"}
+    await rig.client.put("/api/ui/settings", json={"hidden_playlists": [ref]})
+    resp = await rig.client.put("/api/ui/settings", json={"saved_playlists": [ref]})
+    assert resp.json()["hidden_playlists"] == []
+
+
+async def test_renames_and_hidden_playlists_are_validated(rig: Rig) -> None:
+    await rig.login_ui()
+    for bad in (
+        {"playlist_names": {"bad..id": "x"}},
+        {"playlist_names": {"5Pplaylist000000000000": ""}},
+        {"playlist_names": {"5Pplaylist000000000000": "x" * 81}},
+        {"playlist_names": {f"p{i:021d}": "x" for i in range(101)}},
+        {"hidden_playlists": [{"id": "hello", "name": "x"}]},
+        {"hidden_playlists": [{"id": f"p{i:021d}", "name": "x"} for i in range(51)]},
+    ):
+        resp = await rig.client.put("/api/ui/settings", json=bad)
+        assert resp.status_code == 422
+    stored = app_state_of(rig.app).store.get_settings()
+    assert stored.playlist_names == {} and stored.hidden_playlists == ()
 
 
 async def test_saved_playlists_are_validated(rig: Rig) -> None:
@@ -205,12 +259,29 @@ async def test_settings_stored_before_saved_playlists_existed_still_load(rig: Ri
     assert state.store.get_settings().saved_playlists == ()
 
 
-async def test_page_offers_saved_playlists(rig: Rig) -> None:
+async def test_saved_playlists_stored_without_a_time_still_load(rig: Rig) -> None:
+    state = app_state_of(rig.app)
+    state.store._exec(  # noqa: SLF001
+        "INSERT INTO kv (key, value) VALUES ('settings', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (
+            '{"target_playlist": null, "default_device": null, "market": null,'
+            ' "saved_playlists": [{"id": "5Pplaylist000000000000", "name": "Old"}]}',
+        ),
+    )
+    loaded = state.store.get_settings()
+    assert [(p.id, p.name, p.added_at) for p in loaded.saved_playlists] == [
+        ("5Pplaylist000000000000", "Old", 0.0)
+    ]
+    assert loaded.playlist_names == {} and loaded.hidden_playlists == ()
+
+
+async def test_page_manages_playlists(rig: Rig) -> None:
     await rig.login_ui()
     page = (await rig.client.get("/")).text
     script = (await rig.client.get("/static/app.js")).text
-    assert 'id="saved-form"' in page and 'id="saved"' in page
-    assert "saved_playlists" in script
+    assert 'id="saved-form"' in page and 'id="more"' in page
+    assert all(f in script for f in ("saved_playlists", "playlist_names", "hidden_playlists"))
 
 
 PLAYLIST_ID_CASES = [

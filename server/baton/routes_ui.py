@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from baton import __version__, errors
 from baton.auth import (
@@ -20,8 +20,8 @@ from baton.auth import (
     require_ui,
     session_valid,
 )
-from baton.controller import MAX_SAVED, PLAYLIST_ID_PATTERN
-from baton.db import Ref
+from baton.controller import MAX_HIDDEN, MAX_SAVED, PLAYLIST_ID_PATTERN
+from baton.db import Ref, SavedPlaylist
 from baton.routes_watch import add_actions
 
 public = APIRouter(prefix="/api/ui")
@@ -56,6 +56,10 @@ class SavedPlaylistBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+PlaylistId = Annotated[str, StringConstraints(pattern=f"^{PLAYLIST_ID_PATTERN}$")]
+PlaylistName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+
+
 class SettingsBody(BaseModel):
     """Settings update; only the fields present are changed, null clears."""
 
@@ -63,6 +67,8 @@ class SettingsBody(BaseModel):
     default_device_id: str | None = None
     market: str | None = Field(default=None, pattern=r"^([A-Za-z]{2}|from_token)?$")
     saved_playlists: list[SavedPlaylistBody] | None = Field(default=None, max_length=MAX_SAVED)
+    playlist_names: dict[PlaylistId, PlaylistName] | None = Field(default=None, max_length=100)
+    hidden_playlists: list[SavedPlaylistBody] | None = Field(default=None, max_length=MAX_HIDDEN)
 
 
 class KeyBody(BaseModel):
@@ -151,8 +157,8 @@ add_actions(router)
 
 @router.get("/playlists/recent")
 async def recent_playlists(request: Request) -> dict[str, Any]:
-    """Recently played playlists."""
-    return (await app_state(request).controller.playlists()).body()
+    """The playlists as listed on the watch, with what the page needs to manage them."""
+    return (await app_state(request).controller.playlists(detailed=True)).body()
 
 
 @router.post("/playlists/{playlist_id}/play")
@@ -250,9 +256,25 @@ async def put_settings(request: Request, body: SettingsBody) -> dict[str, Any]:
             market = "from_token"
     saved = current.saved_playlists
     if "saved_playlists" in changed:
+        added = {p.id: p.added_at for p in current.saved_playlists}
+        now = state.now()
         entries = body.saved_playlists or []
-        saved = tuple({e.id: Ref(e.id, e.name.strip()) for e in entries}.values())
-    updated = type(current)(target, device, market, saved)
+        saved = tuple(
+            {
+                e.id: SavedPlaylist(e.id, e.name.strip(), added.get(e.id, now)) for e in entries
+            }.values()
+        )
+    names = current.playlist_names
+    if "playlist_names" in changed:
+        names = dict(body.playlist_names or {})
+    hidden = current.hidden_playlists
+    if "hidden_playlists" in changed:
+        hidden = tuple(
+            {e.id: Ref(e.id, e.name.strip()) for e in body.hidden_playlists or []}.values()
+        )
+    # Saving a playlist on purpose brings it back from hiding.
+    hidden = tuple(ref for ref in hidden if ref.id not in {p.id for p in saved})
+    updated = type(current)(target, device, market, saved, names, hidden)
     state.store.save_settings(updated)
     return updated.to_json()
 

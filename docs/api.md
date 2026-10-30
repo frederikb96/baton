@@ -17,7 +17,7 @@ The watch app talks to the server through the phone. This is the whole contract;
   - `POST /api/watch/previous` — if progress > 5000 ms restart the track (seek 0), else previous track.
   - `POST /api/watch/like` / `POST /api/watch/unlike` — Liked Songs, contains-check first, never a toggle.
   - `POST /api/watch/playlist/add` / `POST /api/watch/playlist/remove` — the target playlist from the settings, membership check first, never a duplicate.
-  - Second release: `GET /api/watch/playlists` → `{"result":"ok","playlists":[{"id","name"}], ...}` Liked Songs first (`id` `liked`), then the saved playlists, then the most recently played ones, at most 20 entries, the recent part server-cached; `POST /api/watch/playlists/<id>/play?mode=normal|shuffle|smart` — `smart` falls back to shuffle (Spotify exposes no smart shuffle) and the response says so in `message`.
+  - Second release: `GET /api/watch/playlists` → `{"result":"ok","playlists":[{"id","name"}], ...}` Liked Songs first (`id` `liked`), then the ten most recently used playlists (see [below](#playlist-list)); `POST /api/watch/playlists/<id>/play?mode=normal|shuffle|smart` — `smart` falls back to shuffle (Spotify exposes no smart shuffle) and the response says so in `message`.
 
 ## Server behaviour beyond the contract
 
@@ -28,15 +28,25 @@ The watch app talks to the server through the phone. This is the whole contract;
 - `liked` and `in_playlist` are `null` without a likable track; `in_playlist` and `playlist_name` are `null` without a target playlist. Episodes show their title in `state` but are `no_track` for like and playlist actions.
 - `play-pause` with no active device looks the default device up by its stored id, then by its stored name, and moves playback there. If it is not listed the answer is `no_device`.
 - `play`, `shuffle` and `smart` through `/playlists/<id>/play` set the shuffle state explicitly (`normal` switches shuffle off) and start the playlist on the active device, or on the default device when none is active. A playlist id that is neither `liked` nor 22 alphanumeric characters, or an unknown mode, answers `bad_request`.
-- The recent playlists come from Spotify's recently played items that were played from a playlist, one entry per playlist (a playlist played with smart shuffle carries a session query on its context URI that is ignored), with names cached. A playlist Spotify does not let the login read, such as a personal mix or another Spotify-owned list, has no name to show. A personal mix or editorial list (id starting `37i9dQZF1`) is listed as `Spotify mix (<a track played from it>)` unless a saved playlist gives it a name; any other unreadable playlist is left out and the list is filled up from older plays, up to 15 recent entries.
 - `liked` is Liked Songs and starts like a playlist: the server plays the account's collection context (`spotify:user:<id>:collection`) and, if Spotify refuses that, the newest 50 liked tracks as a plain list. A refusal other than "no active device" is reported as `spotify_error` with Spotify's message.
-- Saved playlists are `{id, name}` pairs kept in the settings (at most 10, set on the page or with `PUT /api/ui/settings` and `saved_playlists`). Spotify withholds the playlists it made, and playlists saved from it, from development-mode apps: they are absent from `GET /v1/me/playlists` and their `GET /v1/playlists/<id>` answers 404. Their names therefore come from the user; whether Spotify starts them is decided when one is played.
 - Idempotency is decided by a read before every write: `GET /me/library/contains` for likes, the playlist's items for membership (cached per playlist snapshot, so a large playlist is read once per change).
 - Commands run one at a time. A press that arrives while another one is running waits and then acts on the state that one left, so a retried or doubled `playlist/add`, `like` or `play-pause` is never applied twice from stale state. `next` and `previous` are not idempotent: each press skips.
 - Playlist membership reads the whole playlist, however long, and treats a relinked track (Spotify's `linked_from`) as the same track. If the playlist cannot be read completely the answer is `spotify_error`, never a guess from a partial list.
 - `GET /state` is shared between requests that arrive together or right after each other (about a second, `BATON_STATE_CACHE_SECONDS`); every command invalidates it. When Spotify answers 429 with `Retry-After`, further Spotify calls are answered `spotify_rate_limited` until that pause has passed (capped at five minutes).
 - Request bodies are capped at 16 KiB; larger ones get `413`.
 - Whatever Spotify sends back, the answer is the envelope above; an unreadable Spotify answer is `spotify_error`.
+
+## Playlist list
+
+`GET /api/watch/playlists` answers Liked Songs and then at most ten playlists, most recently used first. Each entry is `{"id", "name"}` and nothing else.
+
+- A playlist is *used* when Spotify last played from it, when it was started through the server, or, for a saved playlist, when it was added; the latest of these counts. A saved playlist that was never played therefore sits at the top right after it is added and moves down as other playlists are used. A saved playlist stored without an add time counts as added long ago.
+- Spotify's recently played items supply the plays: those that came from a playlist, one entry per playlist (a playlist played with smart shuffle carries a session query on its context URI that is ignored), with names cached, up to 20 playlists that can be named. A playlist started through `/playlists/<id>/play` counts at once, before Spotify has reported it. The recent part is server-cached (`BATON_RECENT_PLAYLISTS_CACHE_SECONDS`).
+- A playlist Spotify does not let the login read, such as a personal mix or another Spotify-owned list, has no name to show. A personal mix or editorial list (id starting `37i9dQZF1`) is listed as `Spotify mix (<a track played from it>)` unless a name is set for it; any other unreadable playlist is left out and the list is filled up from older plays.
+- Saved playlists are `{id, name, added_at}` entries kept in the settings (at most 10, `added_at` in seconds since the epoch, set by the server). Spotify withholds the playlists it made, and playlists saved from it, from development-mode apps: they are absent from `GET /v1/me/playlists` and their `GET /v1/playlists/<id>` answers 404. Their names therefore come from the user; whether Spotify starts them is decided when one is played.
+- `playlist_names` in the settings maps a playlist id to the name shown instead of its own, for saved and recent playlists alike.
+- `hidden_playlists` in the settings are `{id, name}` entries (at most 50, the name is the one the playlist had when it was hidden) that never appear in the list. Saving a playlist removes it from them.
+- The settings are changed with `PUT /api/ui/settings` (`saved_playlists`, `playlist_names`, `hidden_playlists`; each replaces the stored value as a whole). `GET /api/ui/playlists/recent` returns the same list for the web page with `original` (the name without a rename), `saved` and `hidden` per entry, `fixed` on Liked Songs, and `more`: saved playlists that did not make the list and the hidden ones.
 
 ## Additions (backward compatible)
 

@@ -101,11 +101,12 @@ class Rig:
             "default_device": current.default_device,
             "market": current.market,
             "saved_playlists": current.saved_playlists,
+            "playlist_names": current.playlist_names,
+            "hidden_playlists": current.hidden_playlists,
         }
         for key, value in kwargs.items():
-            merged[key] = (
-                Ref(*value) if key != "saved_playlists" and isinstance(value, tuple) else value
-            )
+            is_ref = key in ("target_playlist", "default_device") and value is not None
+            merged[key] = Ref(*value) if is_ref else value  # type: ignore[misc]
         state.store.save_settings(UserSettings(**merged))
 
 
