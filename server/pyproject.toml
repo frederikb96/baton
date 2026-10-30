@@ -1,6 +1,6 @@
 [project]
 name = "baton-server"
-version = "0.1.6"
+version = "0.1.7"
 description = "Self-hosted remote for Spotify: watch API, web page and Spotify login in one small container."
 requires-python = ">=3.12"
 license = { text = "MIT" }
