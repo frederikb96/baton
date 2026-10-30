@@ -27,6 +27,7 @@ class MainView extends WatchUi.View {
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {
+        _controller.drawn();
         var w = dc.getWidth();
         var h = dc.getHeight();
         var status = _controller.status();

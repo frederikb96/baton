@@ -29,6 +29,10 @@ class Controller {
     private var _lastMinute as Number = -1;
     private var _lastHeadline as String? = null;
     private var _lastStatus as Number = -1;
+    private var _lastDrawAt as Number = 0;
+    private var _activeUntil as Number = 0;
+    private var _wasActive as Boolean = true;
+    private var _lastBatteryAt as Number = 0;
 
     function initialize() {
         _api = new ApiClient(method(:onOutcome));
@@ -36,6 +40,8 @@ class Controller {
 
     function start() as Void {
         _tickTimer.start(method(:onTick), 1000, true);
+        _lastBatteryAt = System.getTimer();
+        touch();
         _api.tick(System.getTimer(), true);
     }
 
@@ -47,13 +53,24 @@ class Controller {
     function setActive(active as Boolean) as Void {
         _active = active;
         if (active) {
+            touch();
             _api.pollSoon();
         }
+    }
+
+    // Input or a return to the foreground starts the full pace for a while.
+    private function touch() as Void {
+        _activeUntil = System.getTimer() + Pacing.ACTIVE_WINDOW_MS;
     }
 
     // What the screen shows.
     function status() as Number {
         return Status.of(_api.phoneConnected(), _problem, state);
+    }
+
+    // The view reports each draw, which paces the redraws while playing.
+    function drawn() as Void {
+        _lastDrawAt = System.getTimer();
     }
 
     // Playback position now: the last answer plus the time since it, while playing.
@@ -78,6 +95,7 @@ class Controller {
     function keyPressed(key as Number) as Void {
         var now = System.getTimer();
         Log.line("key", "pressed " + key);
+        touch();
         _classifier.press(key, now);
     }
 
@@ -91,6 +109,7 @@ class Controller {
     function menuHeld() as Void {
         var now = System.getTimer();
         Log.line("key", "menu hold");
+        touch();
         _classifier.menuHeld(now);
         afterInput(now);
     }
@@ -229,7 +248,17 @@ class Controller {
 
     function onTick() as Void {
         var now = System.getTimer();
+        var fullPace = now < _activeUntil;
+        if (fullPace != _wasActive) {
+            _wasActive = fullPace;
+            Log.line("ctl", "full pace " + fullPace);
+        }
+        _api.pollIntervalMs = Pacing.pollIntervalMs(status(), fullPace);
         _api.tick(now, _active);
+        if (now - _lastBatteryAt >= Pacing.BATTERY_LOG_MS) {
+            _lastBatteryAt = now;
+            Log.battery("level");
+        }
         if (_menuDepth > 0 && now > _menuUntil) {
             closeMenus();
         }
@@ -251,7 +280,7 @@ class Controller {
             // the track has run out: the next one is probably playing
             _api.pollSoon();
         }
-        if (stale || minute != _lastMinute || (s != null && s.isPlaying && status() == Status.PLAYING)) {
+        if (stale || minute != _lastMinute || Pacing.redrawDue(status(), fullPace, now, _lastDrawAt)) {
             _lastMinute = minute;
             WatchUi.requestUpdate();
         }

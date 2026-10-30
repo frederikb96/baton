@@ -14,6 +14,7 @@ class BatonApp extends Application.AppBase {
     function onStart(state as Dictionary?) as Void {
         _fromGlance = flag(state, :launchedFromGlance);
         Log.line("app", "start fromGlance=" + _fromGlance + " resume=" + flag(state, :resume));
+        Log.battery("start");
     }
 
     private function flag(state as Dictionary?, key as Symbol) as Boolean {
@@ -23,6 +24,7 @@ class BatonApp extends Application.AppBase {
 
     function onStop(state as Dictionary?) as Void {
         Log.line("app", "stop suspend=" + flag(state, :suspend));
+        Log.battery("stop");
     }
 
     (:typecheck(disableGlanceCheck))

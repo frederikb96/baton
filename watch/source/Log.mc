@@ -8,4 +8,9 @@ module Log {
     function line(tag as String, message as String) as Void {
         System.println(System.getTimer() + " " + tag + " " + message);
     }
+
+    // The battery level in percent, as precise as the device reports it.
+    function battery(event as String) as Void {
+        line("battery", event + " " + System.getSystemStats().battery.format("%.2f") + "%");
+    }
 }

@@ -39,7 +39,7 @@ The server's answer decides the pattern, not the press:
 
 Progress ring around the edge, title and artist in the middle, the time at the bottom, a hint glyph beside each button (pause/play at Start, skip at Down, heart and menu dots at Up; the heart is red for a liked track) and the target playlist, green when the track is in it. The last command's result shows for a moment in the same place. Standing problems replace the track: no phone, no connection to the server, device asleep (no active Spotify device), Spotify login expired, watch key rejected, nothing playing.
 
-The app polls the server every 10 seconds and every command answer carries the fresh state; the ring advances locally in between. At most one request is in flight. With no phone connected nothing is sent.
+The app saves battery by pacing itself. For 90 seconds after a button press or after the app comes to the foreground it runs at full pace: a poll every 10 seconds and the ring redrawn every second. Untouched, it settles to a slow pace: while playing a poll every 30 seconds (it catches a skip made on the phone; a track that has run out is polled at once) and a redraw every 5 seconds, otherwise a poll every 60 seconds. Every command answer carries the fresh state and a poll follows a button press that wakes the app after a quiet spell. The ring advances locally between answers. At most one request is in flight. With no phone connected nothing is sent. The intervals are the constants in `source/Pacing.mc`.
 
 ## Launching
 
@@ -62,11 +62,11 @@ Copy `bin/baton.prg` to `GARMIN/Apps` on the watch over USB. The file name is th
 
 ## Device log
 
-Create an empty file `GARMIN/APPS/LOGS/BATON.TXT` (named like the `.prg`) on the watch to turn logging on. The app then writes one line per event: key presses and releases, recognised gestures, requests with status and round-trip time, vibration patterns, status changes and lifecycle (`start` with launch source, `active`, `inactive`, `stop`). Neither the key nor request headers are logged. Crashes are in `GARMIN/APPS/LOGS/CIQ_LOG.YAML`.
+Create an empty file `GARMIN/APPS/LOGS/BATON.TXT` (named like the `.prg`) on the watch to turn logging on. The app then writes one line per event: key presses and releases, recognised gestures, requests with status and round-trip time, vibration patterns, status changes and lifecycle (`start` with launch source, `active`, `inactive`, `stop`). The battery level in percent is logged at start, every 5 minutes and at stop (`battery level 87.00%`), so the log of a ride shows the drain per hour. Neither the key nor request headers are logged. Crashes are in `GARMIN/APPS/LOGS/CIQ_LOG.YAML`.
 
 ## Develop
 
-- `monkeyc -t` builds the unit tests, `monkeydo bin/test.prg <device> -t` runs them in the simulator. They cover the key classifier, response parsing, status and vibration choice and text fitting.
+- `monkeyc -t` builds the unit tests, `monkeydo bin/test.prg <device> -t` runs them in the simulator. They cover the key classifier, response parsing, status and vibration choice, poll and redraw pacing and text fitting.
 - A build with a glance view starts the simulator in glance mode. `preview.jungle` leaves the glance out, so the simulator opens the app itself: add `-f preview.jungle`.
 - `tools/stub-server.ts` (Bun) stands in for the server: `WATCH_KEY=<key> SCENARIO=playing bun tools/stub-server.ts`, scenarios `playing`, `paused`, `asleep`, `auth`, `notrack`, `rejected`, switchable while running with `GET /__stub/scenario?name=<scenario>`. Point `Config.mc` at it and, in the simulator, switch off *Settings > Use Device HTTPS Requirements* for a plain `http://` address.
 - The CI workflow (`.github/workflows/watch.yml`) compiles with a throwaway key and runs the tests for every manifest product; it needs neither the SDK files nor the developer key in the repository.

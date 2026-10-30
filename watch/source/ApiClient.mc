@@ -5,8 +5,6 @@ import Toybox.System;
 // some phones), so the next call goes out from the previous callback. Commands wait in a short queue
 // and go before the next poll; a poll is only started when nothing else waits.
 class ApiClient {
-    // the state is also refreshed by every command answer
-    const POLL_INTERVAL_MS = 10000;
     // no callback after this long: the call is given up and its late answer ignored
     const TIMEOUT_MS = 25000;
     const MAX_QUEUED = 3;
@@ -14,7 +12,12 @@ class ApiClient {
     private var _listener as Method(request as Request, outcome as Outcome) as Void;
     private var _queue as Array<Request> = [];
     private var _inFlight as PendingCall? = null;
-    private var _pollDueAt as Number = 0;
+    private var _pollSoon as Boolean = true;
+    private var _lastAnswerAt as Number = 0;
+
+    // time between answers before the next poll; the owner sets it from what the screen shows, and
+    // every command answer also refreshes the state
+    var pollIntervalMs as Number = Pacing.POLL_IDLE_MS;
 
     function initialize(listener as Method(request as Request, outcome as Outcome) as Void) {
         _listener = listener;
@@ -38,14 +41,14 @@ class ApiClient {
             _listener.invoke(call.request, Outcome.failed("timeout"));
         }
         pump(now);
-        if (polling && _inFlight == null && _queue.size() == 0 && now >= _pollDueAt && phoneConnected()) {
+        if (polling && _inFlight == null && _queue.size() == 0 && Pacing.pollDue(_pollSoon, now, _lastAnswerAt, pollIntervalMs) && phoneConnected()) {
             issue(Command.state(), now);
         }
     }
 
     // The next tick polls.
     function pollSoon() as Void {
-        _pollDueAt = 0;
+        _pollSoon = true;
     }
 
     function phoneConnected() as Boolean {
@@ -59,7 +62,7 @@ class ApiClient {
         }
         var now = System.getTimer();
         _inFlight = null;
-        _pollDueAt = now + POLL_INTERVAL_MS;
+        _lastAnswerAt = now;
         Log.line("api", call.request.path + " http=" + responseCode + " rtt=" + (now - call.startedAt) + "ms");
         _listener.invoke(call.request, Outcome.fromResponse(responseCode, data));
         pump(now);
@@ -80,11 +83,12 @@ class ApiClient {
     private function issue(request as Request, now as Number) as Void {
         var call = new PendingCall(self, request, now);
         _inFlight = call;
+        _pollSoon = false;
         try {
             Wire.send(request, call.method(:onResponse));
         } catch (ex) {
             _inFlight = null;
-            _pollDueAt = now + POLL_INTERVAL_MS;
+            _lastAnswerAt = now;
             Log.line("api", "send failed " + request.path);
             _listener.invoke(request, Outcome.failed("send_failed"));
         }
