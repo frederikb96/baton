@@ -18,7 +18,7 @@ Every press is safe to repeat: like and playlist add never toggle, and a command
 | Up | hold ~0.6 s | menu |
 | Back | short | exit the app |
 
-The menu opens on *Remove like*, so Up-hold then Start removes the like; the second entry (*Off playlist*) removes the track from the target playlist, the third (*Playlists*) lists Liked Songs, the saved playlists and recently played playlists to start normally, shuffled or with smart shuffle (plain shuffle where Spotify has no smart shuffle). Choosing an entry returns to the main screen; an untouched menu closes after 8 seconds.
+The menu opens on *Remove like*, so Up-hold then Start removes the like; the second entry (*Off playlist*) removes the track from the target playlist, the third (*Playlists*) lists Liked Songs and the ten playlists used last to start normally, shuffled or with smart shuffle (plain shuffle where Spotify has no smart shuffle). Choosing an entry returns to the main screen; an untouched menu closes after 8 seconds.
 
 Like, add and remove carry the id of the track the screen showed; if another song plays by the time the server gets the request it refuses ("Song changed", error vibration) and the state is refreshed.
 
