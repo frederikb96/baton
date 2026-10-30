@@ -25,7 +25,6 @@ module MenuFlow {
         menu.addItem(new WatchUi.MenuItem("Remove like", null, :unlike, null));
         menu.addItem(new WatchUi.MenuItem("Off playlist", null, :remove, null));
         menu.addItem(new WatchUi.MenuItem("Playlists", null, :playlists, null));
-        menu.addItem(new WatchUi.MenuItem("Previous song", null, :previous, null));
         WatchUi.pushView(menu, new RootMenuDelegate(), WatchUi.SLIDE_UP);
     }
 
@@ -48,8 +47,6 @@ class RootMenuDelegate extends WatchUi.Menu2InputDelegate {
             MenuFlow.finish(Command.unlike(MenuFlow.controller().trackId()));
         } else if (id == :remove) {
             MenuFlow.finish(Command.playlistRemove(MenuFlow.controller().trackId()));
-        } else if (id == :previous) {
-            MenuFlow.finish(Command.previousTrack());
         } else if (id == :playlists) {
             MenuFlow.controller().requestPlaylists(new PlaylistsLoader().method(:onPlaylists));
             item.setSubLabel("Loading...");

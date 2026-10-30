@@ -7,6 +7,7 @@ module Gesture {
         PLAY_PAUSE,
         NEXT,
         RESTART,
+        PREVIOUS_TRACK,
         LIKE,
         PLAYLIST_ADD,
         MENU,
@@ -14,27 +15,29 @@ module Gesture {
     }
 }
 
-// Turns raw key pressed/released timing into gestures. The platform delivers no double-press event
+// Turns raw key pressed/released timing into gestures. The platform delivers no multi-press event
 // and runs firmware shortcuts on long presses, so only a press with a matching release under
 // SHORT_MAX_MS counts; a touch-mapped behaviour or a firmware hold never produces a gesture.
 //
 //   Start      short                      play/pause
-//   Down       short / double             next / start of the track
+//   Down       short / double / triple    next / start of the track / previous track
 //   Up         short / double / hold      like / add to playlist / menu
 //   Back       short                      exit
 //
-// Up and Down have a double-press window, so their single press is emitted only once the window
-// has passed without a second press. All timestamps are milliseconds from one monotonic clock and
+// Up and Down have a multi-press window, so a press that can still grow into a longer gesture is
+// emitted only once the window has passed without another press. All timestamps are milliseconds from one monotonic clock and
 // are passed in, which keeps the class free of the device clock.
 class GestureClassifier {
     // A press longer than this is a hold and does nothing by itself.
     const SHORT_MAX_MS = 600;
-    // Time after a first release in which a second press makes a double press.
+    // Time after a release in which another press continues the gesture.
     const DOUBLE_WINDOW_MS = 380;
 
     private var _downAt as Dictionary<Number, Number> = {};
-    // key -> time at which a lone first tap becomes a single press
+    // key -> time at which the taps so far become their gesture
     private var _pendingUntil as Dictionary<Number, Number> = {};
+    // key -> taps so far
+    private var _tapCount as Dictionary<Number, Number> = {};
     private var _out as Array<Number> = [];
     private var _menuFired as Boolean = false;
 
@@ -59,8 +62,8 @@ class GestureClassifier {
         }
         var held = now - downAt;
         if (held < 0 || held >= SHORT_MAX_MS) {
-            // a long second press cancels the first tap as well
-            _pendingUntil.remove(key);
+            // a long press cancels the taps before it as well
+            forget(key);
             return;
         }
         if (key == WatchUi.KEY_ENTER) {
@@ -68,10 +71,13 @@ class GestureClassifier {
         } else if (key == WatchUi.KEY_ESC) {
             _out.add(Gesture.EXIT);
         } else if (key == WatchUi.KEY_UP || key == WatchUi.KEY_DOWN) {
-            if (_pendingUntil.hasKey(key)) {
-                _pendingUntil.remove(key);
-                _out.add(key == WatchUi.KEY_UP ? Gesture.PLAYLIST_ADD : Gesture.RESTART);
+            var taps = _pendingUntil.hasKey(key) ? (_tapCount[key] as Number) + 1 : 1;
+            var last = key == WatchUi.KEY_UP ? 2 : 3;
+            if (taps == last) {
+                forget(key);
+                _out.add(key == WatchUi.KEY_UP ? Gesture.PLAYLIST_ADD : Gesture.PREVIOUS_TRACK);
             } else {
+                _tapCount[key] = taps;
                 _pendingUntil[key] = now + DOUBLE_WINDOW_MS;
             }
         }
@@ -82,7 +88,7 @@ class GestureClassifier {
         settle(now);
         if (_downAt.hasKey(WatchUi.KEY_UP) && !_menuFired) {
             _menuFired = true;
-            _pendingUntil.remove(WatchUi.KEY_UP);
+            forget(WatchUi.KEY_UP);
             _out.add(Gesture.MENU);
         }
     }
@@ -98,7 +104,7 @@ class GestureClassifier {
         return gesture;
     }
 
-    // When a lone first tap becomes a single press, or null when none waits.
+    // When waiting taps become their gesture, or null when none wait.
     function nextDeadline() as Number? {
         var deadline = null;
         var keys = _pendingUntil.keys();
@@ -114,20 +120,31 @@ class GestureClassifier {
     function reset() as Void {
         _downAt = {};
         _pendingUntil = {};
+        _tapCount = {};
         _out = [];
         _menuFired = false;
     }
 
-    // Emits the lone taps whose window has passed. A key that is down again is a second press in
+    // Emits the taps whose window has passed. A key that is down again is a further press in
     // progress and decides itself on release.
     private function settle(now as Number) as Void {
         var keys = _pendingUntil.keys();
         for (var i = 0; i < keys.size(); i++) {
             var key = keys[i] as Number;
             if (now >= (_pendingUntil[key] as Number) && !_downAt.hasKey(key)) {
-                _pendingUntil.remove(key);
-                _out.add(key == WatchUi.KEY_UP ? Gesture.LIKE : Gesture.NEXT);
+                var taps = _tapCount[key] as Number;
+                forget(key);
+                if (key == WatchUi.KEY_UP) {
+                    _out.add(Gesture.LIKE);
+                } else {
+                    _out.add(taps == 1 ? Gesture.NEXT : Gesture.RESTART);
+                }
             }
         }
+    }
+
+    private function forget(key as Number) as Void {
+        _pendingUntil.remove(key);
+        _tapCount.remove(key);
     }
 }

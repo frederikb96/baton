@@ -13,16 +13,17 @@ Every press is safe to repeat: like and playlist add never toggle, and a command
 | Start | short | play / pause |
 | Down | short | next track |
 | Down | double | start of the current track |
+| Down | triple | previous track |
 | Up | short | add to Liked Songs |
 | Up | double | add to the target playlist |
 | Up | hold ~0.6 s | menu |
 | Back | short | exit the app |
 
-The menu opens on *Remove like*, so Up-hold then Start removes the like; the second entry (*Off playlist*) removes the track from the target playlist, the third (*Playlists*) lists Liked Songs and the ten playlists used last to start normally, shuffled or with smart shuffle (plain shuffle where Spotify has no smart shuffle), the fourth (*Previous song*) goes to the previous track. Choosing an entry returns to the main screen; an untouched menu closes after 8 seconds.
+The menu opens on *Remove like*, so Up-hold then Start removes the like; the second entry (*Off playlist*) removes the track from the target playlist, the third (*Playlists*) lists Liked Songs and the ten playlists used last to start normally, shuffled or with smart shuffle (plain shuffle where Spotify has no smart shuffle). Choosing an entry returns to the main screen; an untouched menu closes after 8 seconds.
 
 Like, add and remove carry the id of the track the screen showed; if another song plays by the time the server gets the request it refuses ("Song changed", error vibration) and the state is refreshed.
 
-Actions fire on release of a press shorter than 0.6 s. Apart from the Up hold that opens the menu, longer presses, the touch screen and the watch's own hold shortcuts (voice control, music controls, recent apps) trigger nothing in the app. Up and Down wait 0.4 s for a second press before acting.
+Actions fire on release of a press shorter than 0.6 s. Apart from the Up hold that opens the menu, longer presses, the touch screen and the watch's own hold shortcuts (voice control, music controls, recent apps) trigger nothing in the app. Up and Down wait 0.4 s for another press before acting, so a double press on Down acts 0.4 s after its last release and a triple press at once.
 
 ## Vibration
 

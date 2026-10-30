@@ -57,20 +57,40 @@ function downSingleWaitsForTheWindow(logger as Logger) as Boolean {
 }
 
 (:test)
-function downDoubleIsRestartOnly(logger as Logger) as Boolean {
+function downDoubleIsRestartOnceTheWindowHasPassed(logger as Logger) as Boolean {
     var c = new GestureClassifier();
     var released = tap(c, WatchUi.KEY_DOWN, 1000, 80);
     released = tap(c, WatchUi.KEY_DOWN, released + 150, 80);
-    return sameGestures(drain(c, released + 2000), [Gesture.RESTART]);
+    var early = drain(c, released + 100);
+    return sameGestures(early, []) && sameGestures(drain(c, released + c.DOUBLE_WINDOW_MS), [Gesture.RESTART]);
 }
 
 (:test)
-function downTripleIsRestartThenNext(logger as Logger) as Boolean {
+function downTripleIsPreviousTrackAtOnce(logger as Logger) as Boolean {
     var c = new GestureClassifier();
     var released = tap(c, WatchUi.KEY_DOWN, 1000, 80);
     released = tap(c, WatchUi.KEY_DOWN, released + 100, 80);
     released = tap(c, WatchUi.KEY_DOWN, released + 100, 80);
-    return sameGestures(drain(c, released + 2000), [Gesture.RESTART, Gesture.NEXT]);
+    return sameGestures(drain(c, released), [Gesture.PREVIOUS_TRACK]) && c.nextDeadline() == null;
+}
+
+(:test)
+function downFourTimesIsPreviousTrackThenNext(logger as Logger) as Boolean {
+    var c = new GestureClassifier();
+    var released = 1000;
+    for (var i = 0; i < 4; i++) {
+        released = tap(c, WatchUi.KEY_DOWN, released + 100, 80);
+    }
+    return sameGestures(drain(c, released + 2000), [Gesture.PREVIOUS_TRACK, Gesture.NEXT]);
+}
+
+(:test)
+function aLongThirdPressDropsTheTwoTaps(logger as Logger) as Boolean {
+    var c = new GestureClassifier();
+    var released = tap(c, WatchUi.KEY_DOWN, 1000, 80);
+    released = tap(c, WatchUi.KEY_DOWN, released + 100, 80);
+    tap(c, WatchUi.KEY_DOWN, released + 100, 900);
+    return sameGestures(drain(c, 10000), []);
 }
 
 (:test)

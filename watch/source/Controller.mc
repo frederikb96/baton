@@ -141,6 +141,8 @@ class Controller {
             send(Command.next());
         } else if (gesture == Gesture.RESTART) {
             send(Command.restart());
+        } else if (gesture == Gesture.PREVIOUS_TRACK) {
+            send(Command.previousTrack());
         } else if (gesture == Gesture.LIKE) {
             send(Command.like(trackId()));
         } else if (gesture == Gesture.PLAYLIST_ADD) {
