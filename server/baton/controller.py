@@ -65,6 +65,25 @@ class State:
 
 
 @dataclass(frozen=True)
+class KnownState:
+    """The last state read: until ``fresh_until`` it answers without asking Spotify."""
+
+    read_at: float
+    fresh_until: float
+    state: State
+
+
+@dataclass(frozen=True)
+class TrackFlags:
+    """Whether a track is liked and on the target playlist, looked up once per track."""
+
+    track_id: str
+    target_id: str | None
+    liked: bool | None
+    in_playlist: bool | None
+
+
+@dataclass(frozen=True)
 class RecentPlaylist:
     """A recently played playlist with its name and the time of its latest play."""
 
@@ -141,11 +160,13 @@ def serialized(func: Command) -> Command:
     @functools.wraps(func)
     async def wrapper(self: Controller, *args: Any, **kwargs: Any) -> Reply:
         async with self._lock:
+            reply: Reply | None = None
             try:
-                return await func(self, *args, **kwargs)
+                reply = await func(self, *args, **kwargs)
+                return reply
             finally:
                 self._state_generation += 1
-                self._state_cache = None
+                self._after_command(reply.state if reply else None)
 
     return wrapper
 
@@ -176,7 +197,8 @@ class Controller:
         self._names: dict[str, str] = {}
         self._unavailable: dict[str, float] = {}
         self._state_ttl = state_cache_seconds
-        self._state_cache: tuple[float, Reply] | None = None
+        self._known: KnownState | None = None
+        self._flags: TrackFlags | None = None
         self._state_inflight: asyncio.Future[Reply] | None = None
         self._state_generation = 0
         self._lock = asyncio.Lock()
@@ -204,10 +226,19 @@ class Controller:
     ) -> State:
         target = self._store.get_settings().target_playlist
         track = pb.track if pb else None
-        if track is not None and liked is None:
-            liked = await self._soft(self._provider.is_liked(track.uri))
-        if track is not None and target is not None and in_playlist is None:
-            in_playlist = await self._soft(self._provider.playlist_contains(target.id, track.uri))
+        if track is not None:
+            flags = self._flags
+            target_id = target.id if target else None
+            if flags and flags.track_id == track.id and flags.target_id == target_id:
+                liked = flags.liked if liked is None else liked
+                in_playlist = flags.in_playlist if in_playlist is None else in_playlist
+            if liked is None:
+                liked = await self._soft(self._provider.is_liked(track.uri))
+            if target is not None and in_playlist is None:
+                in_playlist = await self._soft(
+                    self._provider.playlist_contains(target.id, track.uri)
+                )
+            self._flags = TrackFlags(track.id, target_id, liked, in_playlist)
         return State(
             is_playing=bool(pb and pb.is_playing),
             title=pb.title if pb else None,
@@ -228,10 +259,43 @@ class Controller:
             await asyncio.sleep(self._settle)
         return await self._state(await self._provider.playback())
 
+    def _carried(self, known: KnownState) -> State:
+        """The known state with the progress it has by now."""
+        state = known.state
+        progress = state.progress_ms
+        if state.is_playing and progress is not None:
+            progress += int((self._now() - known.read_at) * 1000)
+            if state.duration_ms is not None:
+                progress = min(progress, state.duration_ms)
+        return dataclasses.replace(
+            state, progress_ms=progress, server_time_ms=int(self._now() * 1000)
+        )
+
+    def _after_command(self, state: State | None) -> None:
+        """A command's answer is the newest state; without one the known state is out of date."""
+        now = self._now()
+        if state is not None:
+            self._known = KnownState(now, now + self._state_ttl, state)
+        elif self._known is not None:
+            self._known = dataclasses.replace(self._known, fresh_until=now)
+
     async def state(self) -> Reply:
-        """Current state; reads that overlap or follow each other closely share one lookup."""
-        if self._state_cache and self._now() - self._state_cache[0] < self._state_ttl:
-            return self._state_cache[1]
+        """Current state from Spotify, or the known one while that is fresh or reads are held.
+
+        A track that has run out counts as not fresh, so the next one shows up on time.
+        """
+        known = self._known
+        if known is not None:
+            carried = self._carried(known)
+            running_out = (
+                carried.is_playing
+                and carried.duration_ms is not None
+                and carried.progress_ms is not None
+                and carried.progress_ms >= carried.duration_ms
+            )
+            fresh = self._now() < known.fresh_until and not running_out
+            if fresh or not self._provider.reads_open():
+                return Reply(OK, state=carried)
         if self._state_inflight is None:
             self._state_inflight = asyncio.ensure_future(self._read_state())
         return await asyncio.shield(self._state_inflight)
@@ -244,8 +308,11 @@ class Controller:
         generation = self._state_generation
         try:
             reply = await self._read_state_reply()
-            if reply.result == OK and generation == self._state_generation:
-                self._state_cache = (self._now(), reply)
+            if reply.result == OK and reply.state and generation == self._state_generation:
+                now = self._now()
+                self._known = KnownState(now, now + self._state_ttl, reply.state)
+            if reply.error == errors.SPOTIFY_RATE_LIMITED and self._known is not None:
+                return Reply(OK, state=self._carried(self._known))
             return reply
         finally:
             self._state_inflight = None
@@ -287,6 +354,23 @@ class Controller:
             await self._provider.seek(0)
         else:
             await self._provider.previous()
+        return Reply(OK, state=await self._fresh())
+
+    @serialized
+    @guarded
+    async def restart(self) -> Reply:
+        """Jump to the start of the current track, wherever it is."""
+        pb = await self._provider.playback()
+        if pb is None:
+            return failure(errors.NO_DEVICE, "No active Spotify device.")
+        await self._provider.seek(0)
+        return Reply(OK, state=await self._fresh())
+
+    @serialized
+    @guarded
+    async def previous_track(self) -> Reply:
+        """Go to the previous track, wherever the current one is."""
+        await self._provider.previous()
         return Reply(OK, state=await self._fresh())
 
     async def _default_device(self) -> Device:
@@ -395,11 +479,10 @@ class Controller:
         return name
 
     async def _recent_name(self, recent: RecentContext) -> str | None:
-        """Name of a recent playlist; an unreadable Spotify-owned one is labelled by a track."""
-        name = await self._playlist_name(recent.id)
-        if name is None and recent.id.startswith(SPOTIFY_OWNED_PREFIX):
+        """Name of a recent playlist; a Spotify-owned one is unreadable and labelled by a track."""
+        if recent.id.startswith(SPOTIFY_OWNED_PREFIX):
             return f"Spotify mix ({recent.track})" if recent.track else "Spotify mix"
-        return name
+        return await self._playlist_name(recent.id)
 
     async def recent_playlists(self) -> list[RecentPlaylist]:
         """Recently played playlists that can be named, most recent first, cached briefly."""

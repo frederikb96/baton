@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
@@ -249,7 +250,7 @@ async def test_concurrent_state_reads_share_one_lookup(make_rig: Callable[..., R
     assert len(rig.fake.calls) <= 3
 
 
-async def test_state_is_reused_briefly_and_commands_invalidate_it(
+async def test_state_is_reused_and_a_command_answer_replaces_it(
     make_rig: Callable[..., Rig],
 ) -> None:
     rig = make_rig(BATON_STATE_CACHE_SECONDS="1")
@@ -261,10 +262,110 @@ async def test_state_is_reused_briefly_and_commands_invalidate_it(
     rig.clock.t += 2
     await rig.watch_get("state")
     assert len(rig.fake.calls) > before
-    await rig.watch_post("next")
+    answer = envelope(await rig.watch_post("next"))
     after_command = len(rig.fake.calls)
+    assert envelope(await rig.watch_get("state"))["state"]["title"] == answer["state"]["title"]
+    assert len(rig.fake.calls) == after_command
+    rig.clock.t += 2
     await rig.watch_get("state")
     assert len(rig.fake.calls) > after_command
+
+
+async def test_a_track_costs_one_lookup_of_its_flags_and_a_poll_one_call(rig: Rig) -> None:
+    rig.settings(target_playlist=("pl10000000000000000000", "My Shazam"))
+    await rig.watch_get("state")
+    rig.fake.calls.clear()
+    for _ in range(5):
+        await rig.watch_get("state")
+    assert [c[1] for c in rig.fake.calls] == ["/v1/me/player"] * 5
+
+
+async def test_a_like_updates_the_flags_without_another_lookup(rig: Rig) -> None:
+    await rig.watch_get("state")
+    assert envelope(await rig.watch_post("like"))["state"]["liked"] is True
+    rig.fake.calls.clear()
+    assert envelope(await rig.watch_get("state"))["state"]["liked"] is True
+    assert not rig.fake.calls_to("GET", "/v1/me/library/contains")
+
+
+async def test_the_known_state_carries_progress_and_rereads_when_the_track_runs_out(
+    make_rig: Callable[..., Rig],
+) -> None:
+    rig = make_rig(BATON_STATE_CACHE_SECONDS="15")
+    rig.link()
+    first = envelope(await rig.watch_get("state"))["state"]
+    rig.fake.calls.clear()
+    rig.clock.t += 10
+    later = envelope(await rig.watch_get("state"))["state"]
+    assert later["progress_ms"] == first["progress_ms"] + 10000
+    assert rig.fake.calls == []
+    state = app_state_of(rig.app).controller
+    assert state._known is not None
+    known = dataclasses.replace(
+        state._known,
+        state=dataclasses.replace(state._known.state, duration_ms=first["progress_ms"] + 11000),
+    )
+    state._known = known
+    rig.clock.t += 2
+    await rig.watch_get("state")
+    assert spotify_calls(rig, "GET", "/v1/me/player") == 1
+
+
+async def test_a_spent_budget_answers_the_known_state_and_commands_still_go_out(
+    make_rig: Callable[..., Rig],
+) -> None:
+    rig = make_rig(BATON_SPOTIFY_BUDGET_30S="3")
+    rig.link()
+    first = envelope(await rig.watch_get("state"))
+    envelope(await rig.watch_get("state"))
+    rig.fake.calls.clear()
+    assert envelope(await rig.watch_get("state"))["state"]["title"] == first["state"]["title"]
+    assert rig.fake.calls == []
+    assert envelope(await rig.watch_post("next"))["result"] == "ok"
+    rig.clock.t += 31
+    rig.fake.calls.clear()
+    envelope(await rig.watch_get("state"))
+    assert spotify_calls(rig, "GET", "/v1/me/player") == 1
+
+
+async def test_a_rate_limit_pause_answers_the_known_state(rig: Rig) -> None:
+    title = envelope(await rig.watch_get("state"))["state"]["title"]
+    rig.fake.fail("GET /v1/me/player", 429, headers={"Retry-After": "600"})
+    body = envelope(await rig.watch_get("state"))
+    assert body["result"] == "ok" and body["state"]["title"] == title
+    calls = len(rig.fake.calls)
+    assert envelope(await rig.watch_get("state"))["result"] == "ok"
+    assert len(rig.fake.calls) == calls
+
+
+async def test_a_short_pause_is_waited_out_and_the_press_succeeds(rig: Rig) -> None:
+    async def sleep(seconds: float) -> None:
+        rig.clock.t += seconds
+
+    app_state_of(rig.app).provider._sleep = sleep
+    rig.fake.fail("POST /v1/me/player/next", 429, headers={"Retry-After": "5"})
+    assert envelope(await rig.watch_post("next"))["result"] == "ok"
+    assert len(rig.fake.calls_to("POST", "/v1/me/player/next")) == 2
+
+
+async def test_a_long_retry_after_is_kept_and_a_429_without_one_pauses_too(rig: Rig) -> None:
+    rig.fake.fail("GET /v1/me/player", 429, headers={"Retry-After": "7200"})
+    await rig.watch_get("state")
+    rig.clock.t += 7000
+    assert envelope(await rig.watch_get("state"))["error"] == "spotify_rate_limited"
+    rig.clock.t += 201
+    rig.fake.fail(
+        "GET /v1/me/player",
+        429,
+        {"error": {"status": 429, "message": "Too many requests", "reason": "QUOTA_EXCEEDED"}},
+    )
+    assert envelope(await rig.watch_get("state"))["error"] == "spotify_rate_limited"
+    calls = len(rig.fake.calls)
+    rig.clock.t += 800
+    assert envelope(await rig.watch_get("state"))["error"] == "spotify_rate_limited"
+    assert len(rig.fake.calls) == calls
+    rig.clock.t += 101
+    assert envelope(await rig.watch_get("state"))["result"] == "ok"
 
 
 async def test_retry_after_pauses_all_spotify_calls(rig: Rig) -> None:

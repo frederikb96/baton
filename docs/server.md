@@ -44,7 +44,9 @@ Bootstrap values only. Each is read from the environment variable `BATON_` plus 
 | `BATON_THROTTLE_WINDOW_SECONDS` | Window in which failures are counted. |
 | `BATON_THROTTLE_LOCKOUT_SECONDS` | Length of a login lockout. |
 | `BATON_RECENT_PLAYLISTS_CACHE_SECONDS` | How long Spotify's recently played playlists are reused for the playlist list. |
-| `BATON_STATE_CACHE_SECONDS` | How long a playback state read is shared by requests that arrive together or right after each other. |
+| `BATON_STATE_CACHE_SECONDS` | How long a playback state read answers later requests without asking Spotify. |
+| `BATON_SPOTIFY_BUDGET_30S` | Spotify calls in a rolling 30 seconds at which state reads stop and the last known state is answered. |
+| `BATON_SPOTIFY_BUDGET_HOUR` | The same for a rolling hour. |
 
 The server refuses to start when a required value is missing or invalid and says which one. Other `BATON_*` variables are ignored, so the service-link variables Kubernetes injects for a Service named `baton` (`BATON_PORT=tcp://…`, `BATON_SERVICE_HOST`, …) do not interfere; that is why the listen settings are called `BATON_LISTEN_HOST` and `BATON_LISTEN_PORT`.
 

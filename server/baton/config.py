@@ -45,6 +45,8 @@ class Config(BaseModel):
     throttle_lockout_seconds: int
     recent_playlists_cache_seconds: int
     state_cache_seconds: float
+    spotify_budget_30s: int
+    spotify_budget_hour: int
 
     @field_validator("public_url")
     @classmethod

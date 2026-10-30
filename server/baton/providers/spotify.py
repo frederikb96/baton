@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
 import httpx
 
 from baton import errors
+from baton.budget import CallBudget
 from baton.providers.base import (
     Device,
     Playback,
@@ -28,12 +31,20 @@ LIKED_FALLBACK_TRACKS = 50
 MAX_PAGES = 40
 # Spotify caps a playlist at 10000 items; the membership scan must be able to read all of them.
 MEMBER_MAX_PAGES = 220
-MAX_RETRY_AFTER_SECONDS = 300
+MAX_RETRY_AFTER_SECONDS = 86400
+# Pause after a 429 that names none, the longer one when Spotify calls it the used-up quota.
+DEFAULT_PAUSE_SECONDS = 60
+QUOTA_PAUSE_SECONDS = 900
+QUOTA_EXCEEDED = "QUOTA_EXCEEDED"
+# A pause up to this long is waited out, so that a press succeeds late instead of failing.
+HOLD_SECONDS = 15.0
+CALL_REPORT_SECONDS = 3600.0
 DEFAULT_MARKET = "from_token"
 PLAYER_PATH = "/me/player"
 # A playlist context URI; Spotify appends a query (``?sessionId=…&mode=enhanced``) to the
 # ones that were played with smart shuffle, and older clients wrote ``spotify:user:<id>:playlist:``.
 PLAYLIST_CONTEXT = re.compile(r"^spotify:(?:user:[^:]+:)?playlist:([A-Za-z0-9]+)(?:\?.*)?$")
+log = logging.getLogger(__name__)
 
 
 def _first_artist(item: dict[str, Any]) -> str | None:
@@ -73,12 +84,17 @@ class SpotifyProvider(Provider):
         client: httpx.AsyncClient,
         market: Callable[[], str | None],
         now: Callable[[], float],
+        budget: CallBudget,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._api = api_url.rstrip("/")
         self._accounts = accounts
         self._client = client
         self._market = market
         self._now = now
+        self._budget = budget
+        self._sleep = sleep
+        self._reported_at = now()
         self._rate_limited_until = 0.0
         self._playlist_cache: dict[str, tuple[str, set[str]]] = {}
         self._user_id: str | None = None
@@ -93,13 +109,29 @@ class SpotifyProvider(Provider):
         params: Any = None,
         json: Any = None,
     ) -> httpx.Response:
-        """One call with the stored login, retried once with a fresh token after a 401."""
+        """One call, after a short pause is waited out; a short 429 is retried once."""
         wait = self._rate_limited_until - self._now()
-        if wait > 0:
+        if wait > HOLD_SECONDS:
             raise self._rate_limited(wait)
+        if wait > 0:
+            await self._sleep(wait)
+        resp = await self._authorized(method, path, params, json)
+        if resp.status_code == 429:
+            self._note_rate_limit(resp, path)
+            wait = self._rate_limited_until - self._now()
+            if 0 < wait <= HOLD_SECONDS:
+                await self._sleep(wait)
+                resp = await self._authorized(method, path, params, json)
+                if resp.status_code == 429:
+                    self._note_rate_limit(resp, path)
+        return resp
+
+    async def _authorized(self, method: str, path: str, params: Any, json: Any) -> httpx.Response:
+        """One call with the stored login, retried once with a fresh token after a 401."""
         resp: httpx.Response | None = None
         for attempt in range(2):
             token = await self._accounts.access_token(force=attempt == 1)
+            self._count_call()
             try:
                 resp = await self._client.request(
                     method,
@@ -116,9 +148,17 @@ class SpotifyProvider(Provider):
             if resp.status_code != 401:
                 break
         assert resp is not None
-        if resp.status_code == 429:
-            self._note_retry_after(resp)
         return resp
+
+    def _count_call(self) -> None:
+        self._budget.record()
+        if self._now() - self._reported_at >= CALL_REPORT_SECONDS:
+            self._reported_at = self._now()
+            log.info("Spotify calls in the last hour: %d", self._budget.counts()[1])
+
+    def reads_open(self) -> bool:
+        """Whether a state read may go out now."""
+        return self._now() >= self._rate_limited_until and not self._budget.spent()
 
     async def _request(
         self,
@@ -148,13 +188,24 @@ class SpotifyProvider(Provider):
             resp.headers.get("retry-after"),
         )
 
-    def _note_retry_after(self, resp: httpx.Response) -> None:
-        """Stop calling Spotify until the pause it asked for has passed."""
+    def _note_rate_limit(self, resp: httpx.Response, path: str) -> None:
+        """Stop calling Spotify for the pause it asked for, or a default one if it named none."""
+        reason, _ = self._error_fields(resp)
+        header = resp.headers.get("Retry-After")
         try:
-            seconds = float(resp.headers.get("Retry-After", ""))
+            seconds = float(header or "")
         except ValueError:
-            return
+            seconds = QUOTA_PAUSE_SECONDS if reason == QUOTA_EXCEEDED else DEFAULT_PAUSE_SECONDS
         self._rate_limited_until = self._now() + min(max(seconds, 0.0), MAX_RETRY_AFTER_SECONDS)
+        short, long = self._budget.counts()
+        log.warning(
+            "Spotify answered 429 on %s: reason=%s retry_after=%s calls_30s=%d calls_hour=%d",
+            path,
+            reason or None,
+            header,
+            short,
+            long,
+        )
 
     @staticmethod
     def _rate_limited(wait: float) -> errors.ProviderError:
@@ -165,16 +216,19 @@ class SpotifyProvider(Provider):
         )
 
     @staticmethod
-    def _error(resp: httpx.Response, path: str) -> errors.ProviderError:
-        reason = ""
-        message = ""
+    def _error_fields(resp: httpx.Response) -> tuple[str, str]:
+        """The ``reason`` and ``message`` of an error body, empty when it has none."""
         try:
             body = resp.json().get("error", {})
-            if isinstance(body, dict):
-                reason = str(body.get("reason") or "")
-                message = str(body.get("message") or "")
-        except ValueError:
-            pass
+        except (ValueError, AttributeError):
+            return "", ""
+        if not isinstance(body, dict):
+            return "", ""
+        return str(body.get("reason") or ""), str(body.get("message") or "")
+
+    @classmethod
+    def _error(cls, resp: httpx.Response, path: str) -> errors.ProviderError:
+        reason, message = cls._error_fields(resp)
         status = resp.status_code
         if status == 401:
             return errors.ProviderError(

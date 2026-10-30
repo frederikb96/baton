@@ -51,8 +51,14 @@ throttle_window_seconds: 300
 throttle_lockout_seconds: 300
 
 # How long the recent playlists list is reused, in seconds.
-recent_playlists_cache_seconds: 120
+recent_playlists_cache_seconds: 300
 
-# How long a playback state read is shared by concurrent and immediately following requests,
-# in seconds. 0 turns the reuse off; reads that overlap are still merged into one.
-state_cache_seconds: 1
+# How long a playback state read answers later requests, in seconds; progress is carried
+# forward meanwhile and a track that has run out is read again. 0 turns the reuse off; reads
+# that overlap are still merged into one.
+state_cache_seconds: 15
+
+# Spotify calls at which state reads stop and the last known state is answered instead, in a
+# rolling 30 seconds and a rolling hour. Commands are never held back by these.
+spotify_budget_30s: 20
+spotify_budget_hour: 180

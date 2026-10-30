@@ -15,6 +15,8 @@ The watch app talks to the server through the phone. This is the whole contract;
   - `POST /api/watch/play-pause` — pause if playing, else resume; with no active device, start playback on the default device from the settings.
   - `POST /api/watch/next`
   - `POST /api/watch/previous` — if progress > 5000 ms restart the track (seek 0), else previous track.
+  - `POST /api/watch/restart` — start of the current track, wherever it is.
+  - `POST /api/watch/previous-track` — previous track, wherever the current one is.
   - `POST /api/watch/like` / `POST /api/watch/unlike` — Liked Songs, contains-check first, never a toggle.
   - `POST /api/watch/playlist/add` / `POST /api/watch/playlist/remove` — the target playlist from the settings, membership check first, never a duplicate.
   - Second release: `GET /api/watch/playlists` → `{"result":"ok","playlists":[{"id","name"}], ...}` Liked Songs first (`id` `liked`), then the ten most recently used playlists (see [below](#playlist-list)); `POST /api/watch/playlists/<id>/play?mode=normal|shuffle|smart` — `smart` falls back to shuffle (Spotify exposes no smart shuffle) and the response says so in `message`.
@@ -32,9 +34,19 @@ The watch app talks to the server through the phone. This is the whole contract;
 - Idempotency is decided by a read before every write: `GET /me/library/contains` for likes, the playlist's items for membership (cached per playlist snapshot, so a large playlist is read once per change).
 - Commands run one at a time. A press that arrives while another one is running waits and then acts on the state that one left, so a retried or doubled `playlist/add`, `like` or `play-pause` is never applied twice from stale state. `next` and `previous` are not idempotent: each press skips.
 - Playlist membership reads the whole playlist, however long, and treats a relinked track (Spotify's `linked_from`) as the same track. If the playlist cannot be read completely the answer is `spotify_error`, never a guess from a partial list.
-- `GET /state` is shared between requests that arrive together or right after each other (about a second, `BATON_STATE_CACHE_SECONDS`); every command invalidates it. When Spotify answers 429 with `Retry-After`, further Spotify calls are answered `spotify_rate_limited` until that pause has passed (capped at five minutes).
+- See [Staying under Spotify's limits](#staying-under-spotifys-limits) for how often `GET /state` asks Spotify.
 - Request bodies are capped at 16 KiB; larger ones get `413`.
 - Whatever Spotify sends back, the answer is the envelope above; an unreadable Spotify answer is `spotify_error`.
+
+## Staying under Spotify's limits
+
+Spotify publishes no numbers: it counts calls in a rolling 30 seconds and, for development-mode apps, against a quota shared by the developer account. The server keeps a margin from both.
+
+- `GET /state` costs one Spotify call. Whether the track is liked and on the target playlist is looked up once per track and updated by the server's own commands, so a change made in another app shows with the next track.
+- A state read answers later requests for `BATON_STATE_CACHE_SECONDS`, with `progress_ms` carried forward. A track that has run out is read again at once, and a command's answer replaces the known state.
+- Past `BATON_SPOTIFY_BUDGET_30S` or `BATON_SPOTIFY_BUDGET_HOUR` calls, `GET /state` answers the known state until the count has dropped. Commands are never held back by the budget.
+- When Spotify answers 429, nothing is sent for the `Retry-After` it names, or for 60 seconds without one (15 minutes for `QUOTA_EXCEEDED`). Meanwhile `GET /state` answers the known state, or `spotify_rate_limited` if there is none. A pause of up to 15 seconds is waited out, so a press answers late instead of failing; during a longer one commands answer `spotify_rate_limited`.
+- Each 429 leaves a warning in the log with the path, Spotify's reason, `Retry-After` and the calls made in the last 30 seconds and hour, and the number of calls per hour is logged at info level. That is the way to find the real limit of an account.
 
 ## Playlist list
 

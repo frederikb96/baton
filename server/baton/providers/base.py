@@ -80,6 +80,10 @@ class Provider(ABC):
     """Operations an audio source offers. Failures raise ``errors.ProviderError``."""
 
     @abstractmethod
+    def reads_open(self) -> bool:
+        """Whether a state read may go out now, or the last known state should answer."""
+
+    @abstractmethod
     async def playback(self) -> Playback | None:
         """Current playback, None when no device is active."""
 

@@ -41,6 +41,8 @@ def base_env(data_dir: Path, **overrides: str) -> dict[str, str]:
         "BATON_DATA_DIR": str(data_dir),
         "BATON_SETTLE_DELAY_MS": "0",
         "BATON_STATE_CACHE_SECONDS": "0",
+        "BATON_SPOTIFY_BUDGET_30S": "100000",
+        "BATON_SPOTIFY_BUDGET_HOUR": "100000",
         "BATON_SPOTIFY_API_URL": f"{SPOTIFY_URL}/v1",
         "BATON_SPOTIFY_ACCOUNTS_URL": SPOTIFY_URL,
     }

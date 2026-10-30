@@ -215,7 +215,7 @@ async def test_playlist_membership_cache_follows_snapshot(rig: Rig) -> None:
     assert len(rig.fake.calls_to("GET", "/v1/playlists/pl10000000000000000000/items")) == pages
     rig.fake.playlists["pl10000000000000000000"].items.append(T0)
     rig.fake.playlists["pl10000000000000000000"].touch()
-    assert (await call(rig, "GET", "state"))["state"]["in_playlist"] is True
+    assert (await call(rig, "POST", "playlist/add"))["result"] == "already"
 
 
 async def test_playlist_without_target(rig: Rig) -> None:
@@ -253,10 +253,24 @@ async def test_revoked_spotify_login_is_spotify_auth(rig: Rig) -> None:
     assert body["error"] == "spotify_auth"
 
 
+async def test_restart_seeks_to_the_start_wherever_the_track_is(rig: Rig) -> None:
+    rig.fake.progress_ms = 1000
+    assert (await call(rig, "POST", "restart"))["result"] == "ok"
+    assert rig.fake.calls_to("PUT", "/v1/me/player/seek") == [{"position_ms": "0"}]
+    assert not rig.fake.calls_to("POST", "/v1/me/player/previous")
+
+
+async def test_previous_track_goes_back_wherever_the_track_is(rig: Rig) -> None:
+    rig.fake.progress_ms = 60000
+    assert (await call(rig, "POST", "previous-track"))["result"] == "ok"
+    assert rig.fake.calls_to("POST", "/v1/me/player/previous")
+    assert not rig.fake.calls_to("PUT", "/v1/me/player/seek")
+
+
 async def test_rate_limit(rig: Rig) -> None:
-    rig.fake.fail("GET /v1/me/player", 429, headers={"Retry-After": "7"})
+    rig.fake.fail("GET /v1/me/player", 429, headers={"Retry-After": "70"})
     body = await call(rig, "GET", "state")
-    assert body["error"] == "spotify_rate_limited" and "7" in body["message"]
+    assert body["error"] == "spotify_rate_limited" and "70" in body["message"]
 
 
 async def test_spotify_server_error(rig: Rig) -> None:
@@ -332,7 +346,7 @@ async def test_recent_playlists_dedupe_cache_and_limit(rig: Rig) -> None:
     calls = len(rig.fake.calls)
     await call(rig, "GET", "playlists")
     assert len(rig.fake.calls) == calls
-    rig.clock.t += 121
+    rig.clock.t += 301
     rig.fake.recent_contexts = ["pl30000000000000000000"]
     assert [p["id"] for p in await recent_entries(rig)] == ["pl30000000000000000000"]
     assert len([c for c in rig.fake.calls if c[1] == "/v1/playlists/pl30000000000000000000"]) == 1
@@ -573,7 +587,7 @@ async def test_every_watch_route_requires_the_key(rig: Rig) -> None:
     from baton import routes_watch
 
     routes = [(r.path, m) for r in routes_watch.router.routes for m in r.methods]  # type: ignore[attr-defined]
-    assert len(routes) == 10
+    assert len(routes) == 12
     for path, method in routes:
         resp = await rig.client.request(
             method, path.replace("{playlist_id}", "pl10000000000000000000")

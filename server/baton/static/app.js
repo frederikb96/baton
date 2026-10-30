@@ -1,8 +1,8 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const POLL_MS = 3000;
-const DEVICE_POLL_MS = 10000;
+const POLL_MS = 5000;
+const DEVICE_POLL_MS = 30000;
 const RENEW_WARNING_DAYS = 14;
 let playback = null;
 let authMode = "key";

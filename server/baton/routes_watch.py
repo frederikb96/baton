@@ -15,6 +15,8 @@ ACTIONS = {
     "play-pause": "play_pause",
     "next": "next",
     "previous": "previous",
+    "previous-track": "previous_track",
+    "restart": "restart",
     "like": "like",
     "unlike": "unlike",
     "playlist/add": "playlist_add",

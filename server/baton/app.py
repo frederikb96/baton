@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from baton import __version__, routes_login, routes_relay, routes_ui, routes_watch
 from baton.auth import HEALTH_PATH, WATCH_PREFIX, AppState, Throttle, WatchAuthError, proxy_user
+from baton.budget import CallBudget
 from baton.config import Config
 from baton.controller import Controller
 from baton.db import Store
@@ -45,7 +46,12 @@ def create_app(
     client = httpx.AsyncClient(transport=transport)
     accounts = SpotifyAccounts(config, store, client, now)
     provider = SpotifyProvider(
-        config.spotify_api_url, accounts, client, lambda: store.get_settings().market, now
+        config.spotify_api_url,
+        accounts,
+        client,
+        lambda: store.get_settings().market,
+        now,
+        CallBudget(config.spotify_budget_30s, config.spotify_budget_hour, now),
     )
     controller = Controller(
         provider,

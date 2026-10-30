@@ -222,6 +222,8 @@ def test_watch_routes_expose_only_the_contract() -> None:
             "POST /api/watch/play-pause",
             "POST /api/watch/next",
             "POST /api/watch/previous",
+            "POST /api/watch/previous-track",
+            "POST /api/watch/restart",
             "POST /api/watch/like",
             "POST /api/watch/unlike",
             "POST /api/watch/playlist/add",
