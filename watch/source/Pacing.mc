@@ -14,7 +14,8 @@ module Pacing {
     const REDRAW_ACTIVE_MS = 1000;
     // slow pace, whatever is playing: the poll only catches a change made elsewhere
     const POLL_SLOW_MS = 300000;
-    // least time between polls for a track that has run out, when the answer still shows it
+    // least time between polls for a track that has run out, when the answer still shows it;
+    // doubles per poll up to the slow pace, as an answer that stays this way may be a held state
     const TRACK_END_GAP_MS = 5000;
     // slow pace, playing: the ring and the clock redraw this often unless something else changed
     const REDRAW_PLAYING_MS = 5000;
@@ -27,6 +28,14 @@ module Pacing {
 
     function pollDue(soon as Boolean, now as Number, lastAnswerAt as Number, intervalMs as Number) as Boolean {
         return soon || now - lastAnswerAt >= intervalMs;
+    }
+
+    function trackEndGapMs(polls as Number) as Number {
+        var gap = TRACK_END_GAP_MS;
+        for (var i = 0; i < polls && gap < POLL_SLOW_MS; i++) {
+            gap *= 2;
+        }
+        return gap < POLL_SLOW_MS ? gap : POLL_SLOW_MS;
     }
 
     function redrawDue(status as Number, active as Boolean, now as Number, lastDrawAt as Number) as Boolean {

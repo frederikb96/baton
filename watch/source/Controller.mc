@@ -20,6 +20,8 @@ class Controller {
     private var _tickTimer as Timer.Timer = new Timer.Timer();
     private var _windowTimer as Timer.Timer = new Timer.Timer();
     private var _stateAt as Number = 0;
+    private var _trackEndPolls as Number = 0;
+    private var _trackEndPolledAt as Number = 0;
     private var _toastUntil as Number = 0;
     private var _problem as Number? = null;
     private var _active as Boolean = true;
@@ -280,10 +282,16 @@ class Controller {
         var minute = System.getClockTime().min;
         var s = state;
         var progress = progressMs();
-        if (s != null && s.isPlaying && progress != null && s.durationMs != null && progress >= (s.durationMs as Number)
-            && now - _stateAt > Pacing.TRACK_END_GAP_MS) {
-            // the track has run out: the next one is probably playing
-            _api.pollSoon();
+        if (s != null && s.isPlaying && progress != null && s.durationMs != null && progress >= (s.durationMs as Number)) {
+            var gap = Pacing.trackEndGapMs(_trackEndPolls);
+            if (now - _stateAt > gap && now - _trackEndPolledAt > gap) {
+                // the track has run out: the next one is probably playing
+                _trackEndPolls += 1;
+                _trackEndPolledAt = now;
+                _api.pollSoon();
+            }
+        } else {
+            _trackEndPolls = 0;
         }
         if (stale || minute != _lastMinute || Pacing.redrawDue(status(), fullPace, now, _lastDrawAt)) {
             _lastMinute = minute;

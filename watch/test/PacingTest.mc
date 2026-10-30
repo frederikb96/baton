@@ -17,6 +17,15 @@ function aPollIsDueWhenAskedForOrWhenTheIntervalHasPassed(logger as Logger) as B
 }
 
 (:test)
+function theTrackEndGapDoublesUpToTheSlowPace(logger as Logger) as Boolean {
+    var first = Pacing.TRACK_END_GAP_MS;
+    return Pacing.trackEndGapMs(0) == first
+        && Pacing.trackEndGapMs(1) == 2 * first
+        && Pacing.trackEndGapMs(2) == 4 * first
+        && Pacing.trackEndGapMs(1000) == Pacing.POLL_SLOW_MS;
+}
+
+(:test)
 function onlyAPlayingTrackRedrawsOnTheClock(logger as Logger) as Boolean {
     var step = Pacing.REDRAW_PLAYING_MS;
     var fast = Pacing.REDRAW_ACTIVE_MS;
