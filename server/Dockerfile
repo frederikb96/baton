@@ -1,11 +1,11 @@
-FROM python:3.13-slim AS build
+FROM python:3.15-slim AS build
 WORKDIR /src
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
 COPY pyproject.toml ./
 COPY baton ./baton
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install .
 
-FROM python:3.13-slim
+FROM python:3.15-slim
 LABEL org.opencontainers.image.source="https://github.com/frederikb96/baton" \
       org.opencontainers.image.description="Self-hosted remote for Spotify: watch API, web page and Spotify login" \
       org.opencontainers.image.licenses="MIT"
