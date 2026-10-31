@@ -24,6 +24,7 @@ class Controller {
     private var _trackEndPolledAt as Number = 0;
     private var _toastUntil as Number = 0;
     private var _problem as Number? = null;
+    private var _failure as String? = null;
     private var _active as Boolean = true;
     private var _menuDepth as Number = 0;
     private var _menuUntil as Number = 0;
@@ -83,6 +84,11 @@ class Controller {
     // The view reports each draw, which paces the redraws while playing.
     function drawn() as Void {
         _lastDrawAt = System.getTimer();
+    }
+
+    // The hint under a standing problem.
+    function hint(status as Number) as String {
+        return status == Status.UNREACHABLE ? Status.unreachableHint(ServerConfig.url(), _failure) : Status.hint(status);
     }
 
     // Playback position now: the last answer plus the time since it, while playing.
@@ -187,6 +193,7 @@ class Controller {
         }
         if (!"busy".equals(outcome.code)) {
             _problem = Status.problemFor(outcome);
+            _failure = outcome.code;
         }
         if ("track_changed".equals(outcome.code)) {
             _api.pollSoon();

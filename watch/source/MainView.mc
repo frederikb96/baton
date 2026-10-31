@@ -135,7 +135,7 @@ class MainView extends WatchUi.View {
                 Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             y += lineHeight;
         }
-        var hint = _controller.toast != null ? _controller.toast as String : Status.hint(status);
+        var hint = _controller.toast != null ? _controller.toast as String : _controller.hint(status);
         dc.setColor(GRAY, Graphics.COLOR_TRANSPARENT);
         var hintLines = wrap(dc, hint, Graphics.FONT_XTINY, w * 56 / 100, 2);
         var hintHeight = dc.getFontHeight(Graphics.FONT_XTINY);

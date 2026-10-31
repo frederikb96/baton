@@ -85,6 +85,23 @@ module Status {
         return "";
     }
 
+    // What failed and where: "-1001 baton.example.com", from a transport error or http_ code.
+    function unreachableHint(url as String, code as String?) as String {
+        var host = url;
+        var scheme = host.find("://");
+        if (scheme != null) {
+            host = host.substring(scheme + 3, host.length()) as String;
+        }
+        if (code == null) {
+            return host;
+        }
+        var detail = code;
+        if (code.find("http_") == 0) {
+            detail = code.substring(5, code.length()) as String;
+        }
+        return detail + " " + host;
+    }
+
     // The short text confirming a finished command.
     function toastFor(request as Request, outcome as Outcome) as String {
         if (outcome.kind == Result.OK || outcome.kind == Result.ALREADY) {

@@ -50,6 +50,14 @@ function everyProblemHasWordsForTheScreen(logger as Logger) as Boolean {
 }
 
 (:test)
+function unreachableHintNamesTheFailureAndHost(logger as Logger) as Boolean {
+    return Status.unreachableHint("https://baton.example.com", "http_-1001").equals("-1001 baton.example.com")
+        && Status.unreachableHint("https://baton.example.com", "http_502").equals("502 baton.example.com")
+        && Status.unreachableHint("http://10.0.0.2:8000", "send_failed").equals("send_failed 10.0.0.2:8000")
+        && Status.unreachableHint("https://baton.example.com", null).equals("baton.example.com");
+}
+
+(:test)
 function toastNamesWhatHappened(logger as Logger) as Boolean {
     var like = Command.like(null);
     var ok = Outcome.fromResponse(200, okBody());
