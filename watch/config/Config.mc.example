@@ -1,9 +1,0 @@
-// Copy to Config.mc (untracked) and fill in, or generate it with ../configure.
-// Config.mc is compiled into the app, so the key is readable in the built .prg.
-(:glance)
-module Config {
-    // Base URL of the baton server, without a trailing slash.
-    const SERVER_URL = "https://baton.example.com";
-    // The watch key created in the server's web UI.
-    const WATCH_KEY = "replace-with-watch-key";
-}

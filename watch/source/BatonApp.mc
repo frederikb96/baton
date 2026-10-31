@@ -46,6 +46,14 @@ class BatonApp extends Application.AppBase {
     }
 
     (:typecheck(disableGlanceCheck))
+    function onSettingsChanged() as Void {
+        var c = controller;
+        if (c != null) {
+            c.settingsChanged();
+        }
+    }
+
+    (:typecheck(disableGlanceCheck))
     function getInitialView() as [WatchUi.Views] or [WatchUi.Views, WatchUi.InputDelegates] {
         var c = new Controller();
         controller = c;

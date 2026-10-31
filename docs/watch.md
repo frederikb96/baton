@@ -47,19 +47,29 @@ The app saves battery and Spotify calls by pacing itself. For 60 seconds after a
 - From the app list (Start, then Down to the app). It never closes by itself; moving it to the top of the list saves presses.
 - From the glance list the entry shows `artist - title`. An app opened from there is closed by the watch after a couple of minutes without a button press, and shows "Closes when idle".
 
-## Build and install
+## Settings
 
-You need the [Connect IQ SDK](https://developer.garmin.com/connect-iq/sdk/) with the device files and a developer key.
+The app needs the address of your server and a watch key, created in the server's web page. In Garmin Connect on the phone, open the watch's Connect IQ apps, choose Baton and fill in *Server URL* and *Watch key*. The key travels through Garmin's app settings, so revoke it on the server if you stop using the app. Until both are set the watch shows "Set up on phone" and sends nothing; a change arrives while the app runs and takes effect at once.
+
+## Install
+
+The app is on its way to the Connect IQ Store. A store install gets its settings as described above.
+
+## Build locally
+
+You need the [Connect IQ SDK](https://developer.garmin.com/connect-iq/sdk/) with the device files and a developer key. A build copied over USB has no settings page in Garmin Connect, so `local.jungle` bakes the URL and key into the app as its default settings:
 
 ```sh
 cd watch
 BATON_URL=https://baton.example.com BATON_WATCH_KEY=<key> ./configure
-monkeyc -f monkey.jungle -d fenix8solar47mm -o bin/baton.prg -y developer_key.der -w
+monkeyc -f local.jungle -d fenix8solar47mm -o bin/baton.prg -y developer_key.der -w
 ```
 
-`configure` writes `config/Config.mc`, which is compiled into the app and not tracked; without it the build fails with `Undefined symbol ':Config'` in `ServerConfig.mc`. `config/Config.mc.example` shows the shape. The key is readable inside the `.prg`, so treat the file like the key. Watch keys are created in the server's web page.
+`configure` writes `config/properties.xml`, which is not tracked. The key is readable inside the `.prg`, so treat the file like the key.
 
 Copy `bin/baton.prg` to `GARMIN/Apps` on the watch over USB. The file name is the app's name on the watch, so it has to be unique there.
+
+`monkey.jungle` builds the same app with empty settings, which is what a store package needs.
 
 ## Device log
 
@@ -67,7 +77,7 @@ Create an empty file `GARMIN/APPS/LOGS/BATON.TXT` (named like the `.prg`) on the
 
 ## Develop
 
-- `monkeyc -t` builds the unit tests, `monkeydo bin/test.prg <device> -t` runs them in the simulator. They cover the key classifier, response parsing, status and vibration choice, poll and redraw pacing and text fitting.
-- A build with a glance view starts the simulator in glance mode. `preview.jungle` leaves the glance out, so the simulator opens the app itself: add `-f preview.jungle`.
-- `tools/stub-server.ts` (Bun) stands in for the server: `WATCH_KEY=<key> SCENARIO=playing bun tools/stub-server.ts`, scenarios `playing`, `paused`, `asleep`, `auth`, `notrack`, `rejected`, switchable while running with `GET /__stub/scenario?name=<scenario>`. Point `Config.mc` at it and, in the simulator, switch off *Settings > Use Device HTTPS Requirements* for a plain `http://` address.
+- `monkeyc -t` builds the unit tests, `monkeydo bin/test.prg <device> -t` runs them in the simulator. They cover the key classifier, the settings, response parsing, status and vibration choice, poll and redraw pacing and text fitting.
+- A build with a glance view starts the simulator in glance mode. `preview.jungle` is a local build without the glance, so the simulator opens the app itself: run `configure`, then add `-f preview.jungle`.
+- `tools/stub-server.ts` (Bun) stands in for the server: `WATCH_KEY=<key> SCENARIO=playing bun tools/stub-server.ts`, scenarios `playing`, `paused`, `asleep`, `auth`, `notrack`, `rejected`, switchable while running with `GET /__stub/scenario?name=<scenario>`. Point `configure` at it and, in the simulator, switch off *Settings > Use Device HTTPS Requirements* for a plain `http://` address.
 - The CI workflow (`.github/workflows/watch.yml`) compiles with a throwaway key and runs the tests for every manifest product; it needs neither the SDK files nor the developer key in the repository.

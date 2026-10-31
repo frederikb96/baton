@@ -1,0 +1,5 @@
+# Bakes the values from ./configure into the app as its default settings, for a build copied over USB.
+project.manifest = manifest.xml
+project.typecheck = 3
+base.sourcePath = source;test
+base.resourcePath = resources;config

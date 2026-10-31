@@ -29,6 +29,9 @@ class BatonGlance extends WatchUi.GlanceView {
     }
 
     function refresh() as Void {
+        if (!ServerConfig.isSet()) {
+            return;
+        }
         Wire.send(Command.state(), method(:onResponse));
     }
 

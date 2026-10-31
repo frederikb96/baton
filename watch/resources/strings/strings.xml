@@ -1,3 +1,7 @@
 <strings>
     <string id="AppName">Baton</string>
+    <string id="ServerUrlTitle">Server URL</string>
+    <string id="ServerUrlPrompt">The address of your baton server, for example https://baton.example.com</string>
+    <string id="WatchKeyTitle">Watch key</string>
+    <string id="WatchKeyPrompt">A watch key from your server's web page</string>
 </strings>

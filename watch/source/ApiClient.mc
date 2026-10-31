@@ -41,7 +41,7 @@ class ApiClient {
             _listener.invoke(call.request, Outcome.failed("timeout"));
         }
         pump(now);
-        if (polling && _inFlight == null && _queue.size() == 0 && Pacing.pollDue(_pollSoon, now, _lastAnswerAt, pollIntervalMs) && phoneConnected()) {
+        if (polling && _inFlight == null && _queue.size() == 0 && Pacing.pollDue(_pollSoon, now, _lastAnswerAt, pollIntervalMs) && phoneConnected() && ServerConfig.isSet()) {
             issue(Command.state(), now);
         }
     }
@@ -72,7 +72,9 @@ class ApiClient {
         while (_inFlight == null && _queue.size() > 0) {
             var request = _queue[0];
             _queue = _queue.slice(1, null);
-            if (phoneConnected()) {
+            if (!ServerConfig.isSet()) {
+                _listener.invoke(request, Outcome.failed("not_set_up"));
+            } else if (phoneConnected()) {
                 issue(request, now);
             } else {
                 _listener.invoke(request, Outcome.failed("no_phone"));

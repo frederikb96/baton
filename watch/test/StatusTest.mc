@@ -8,12 +8,18 @@ function stateOf(playing as Boolean, title as String?) as PlayerState {
 (:test)
 function statusFollowsPhoneThenProblemThenState(logger as Logger) as Boolean {
     var playing = stateOf(true, "T");
-    return Status.of(false, Status.NO_DEVICE, playing) == Status.NO_PHONE
-        && Status.of(true, Status.NO_DEVICE, playing) == Status.NO_DEVICE
-        && Status.of(true, null, null) == Status.CONNECTING
-        && Status.of(true, null, stateOf(true, "T")) == Status.PLAYING
-        && Status.of(true, null, stateOf(false, "T")) == Status.PAUSED
-        && Status.of(true, null, stateOf(false, null)) == Status.NO_TRACK;
+    return Status.of(true, false, Status.NO_DEVICE, playing) == Status.NO_PHONE
+        && Status.of(true, true, Status.NO_DEVICE, playing) == Status.NO_DEVICE
+        && Status.of(true, true, null, null) == Status.CONNECTING
+        && Status.of(true, true, null, stateOf(true, "T")) == Status.PLAYING
+        && Status.of(true, true, null, stateOf(false, "T")) == Status.PAUSED
+        && Status.of(true, true, null, stateOf(false, null)) == Status.NO_TRACK;
+}
+
+(:test)
+function missingSettingsComeBeforeEverything(logger as Logger) as Boolean {
+    return Status.of(false, false, Status.KEY_REJECTED, stateOf(true, "T")) == Status.NOT_SET_UP
+        && Status.of(false, true, null, null) == Status.NOT_SET_UP;
 }
 
 (:test)
@@ -34,7 +40,7 @@ function standingProblemsComeFromTheOutcome(logger as Logger) as Boolean {
 
 (:test)
 function everyProblemHasWordsForTheScreen(logger as Logger) as Boolean {
-    var problems = [Status.NO_PHONE, Status.KEY_REJECTED, Status.AUTH_EXPIRED, Status.NO_DEVICE, Status.UNREACHABLE];
+    var problems = [Status.NOT_SET_UP, Status.NO_PHONE, Status.KEY_REJECTED, Status.AUTH_EXPIRED, Status.NO_DEVICE, Status.UNREACHABLE];
     for (var i = 0; i < problems.size(); i++) {
         if (Status.headline(problems[i]).length() == 0 || Status.hint(problems[i]).length() == 0) {
             return false;
@@ -57,6 +63,7 @@ function toastNamesWhatHappened(logger as Logger) as Boolean {
         && Status.toastFor(like, noTarget).equals("No target playlist")
         && Status.toastFor(like, Outcome.fromResponse(200, {"result" => "error", "error" => "track_changed"})).equals("Song changed")
         && Status.toastFor(like, Outcome.failed("no_phone")).equals("No phone")
+        && Status.toastFor(like, Outcome.failed("not_set_up")).equals("Not set up")
         && Status.toastFor(Command.playPause(), ok).equals("Playing")
         && Status.toastFor(Command.playPause(), paused).equals("Paused")
         && Status.toastFor(Command.playPlaylist("a", "smart"), Outcome.fromResponse(200, {"result" => "ok", "message" => "Shuffling instead"})).equals("Shuffling instead");

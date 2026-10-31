@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Writes config/Config.mc, which is compiled into the app and is not tracked.
+# Writes config/properties.xml, the default settings of a local build (local.jungle), and is not tracked.
 #
 #   BATON_URL=https://baton.example.com BATON_WATCH_KEY=<key> ./configure
 set -euo pipefail
@@ -10,13 +10,13 @@ set -euo pipefail
 [[ $BATON_URL =~ ^https?://[A-Za-z0-9._~:/%-]+$ ]] || { echo "BATON_URL is not a plain http(s) URL" >&2; exit 1; }
 [[ $BATON_WATCH_KEY =~ ^[A-Za-z0-9._~+/=-]+$ ]] || { echo "BATON_WATCH_KEY has characters outside A-Za-z0-9._~+/=-" >&2; exit 1; }
 
-target="$(dirname "$0")/config/Config.mc"
+target="$(dirname "$0")/config/properties.xml"
+mkdir -p "$(dirname "$target")"
 umask 077
-cat > "$target" <<MC
-(:glance)
-module Config {
-    const SERVER_URL = "$BATON_URL";
-    const WATCH_KEY = "$BATON_WATCH_KEY";
-}
-MC
+cat > "$target" <<XML
+<properties>
+    <property id="serverUrl" type="string">$BATON_URL</property>
+    <property id="watchKey" type="string">$BATON_WATCH_KEY</property>
+</properties>
+XML
 echo "wrote $target"

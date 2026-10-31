@@ -129,7 +129,7 @@ class MainView extends WatchUi.View {
         var lines = wrap(dc, Status.headline(status), Graphics.FONT_SMALL, w * 56 / 100, 3);
         var lineHeight = dc.getFontHeight(Graphics.FONT_SMALL);
         var y = h * 42 / 100 - lineHeight * lines.size() / 2;
-        dc.setColor(status == Status.CONNECTING || status == Status.NO_TRACK ? GRAY : RED, Graphics.COLOR_TRANSPARENT);
+        dc.setColor(status == Status.CONNECTING || status == Status.NO_TRACK || status == Status.NOT_SET_UP ? GRAY : RED, Graphics.COLOR_TRANSPARENT);
         for (var i = 0; i < lines.size(); i++) {
             dc.drawText(w / 2, y + lineHeight / 2, Graphics.FONT_SMALL, lines[i],
                 Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);

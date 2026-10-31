@@ -11,7 +11,8 @@ module Status {
         KEY_REJECTED,
         AUTH_EXPIRED,
         NO_DEVICE,
-        UNREACHABLE
+        UNREACHABLE,
+        NOT_SET_UP
     }
 
     // The standing problem an outcome reports, or null when it shows the server and Spotify working.
@@ -32,9 +33,11 @@ module Status {
         return null;
     }
 
-    // Standing problem first, then what the last state says.
-    function of(phoneConnected as Boolean, problem as Number?, state as PlayerState?) as Number {
-        if (!phoneConnected) {
+    // Missing settings first, then the standing problem, then what the last state says.
+    function of(configured as Boolean, phoneConnected as Boolean, problem as Number?, state as PlayerState?) as Number {
+        if (!configured) {
+            return NOT_SET_UP;
+        } else if (!phoneConnected) {
             return NO_PHONE;
         } else if (problem != null) {
             return problem;
@@ -47,7 +50,9 @@ module Status {
     }
 
     function headline(status as Number) as String {
-        if (status == NO_PHONE) {
+        if (status == NOT_SET_UP) {
+            return "Set up on phone";
+        } else if (status == NO_PHONE) {
             return "No phone";
         } else if (status == KEY_REJECTED) {
             return "Key rejected";
@@ -64,7 +69,9 @@ module Status {
     }
 
     function hint(status as Number) as String {
-        if (status == NO_PHONE) {
+        if (status == NOT_SET_UP) {
+            return "Server and key in Garmin Connect";
+        } else if (status == NO_PHONE) {
             return "Phone not connected";
         } else if (status == KEY_REJECTED) {
             return "Check the watch key";
@@ -96,6 +103,8 @@ module Status {
             var code = outcome.code;
             if ("no_phone".equals(code)) {
                 return "No phone";
+            } else if ("not_set_up".equals(code)) {
+                return "Not set up";
             }
             return "busy".equals(code) ? "Busy" : ("timeout".equals(code) ? "No answer" : "Failed");
         }

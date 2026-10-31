@@ -35,6 +35,7 @@ class Controller {
     private var _activeUntil as Number = 0;
     private var _wasActive as Boolean = true;
     private var _lastBatteryAt as Number = 0;
+    private var _configured as Boolean = ServerConfig.isSet();
 
     function initialize() {
         _api = new ApiClient(method(:onOutcome));
@@ -60,6 +61,15 @@ class Controller {
         }
     }
 
+    // New settings can cure what the old ones caused, so the next answer decides afresh.
+    function settingsChanged() as Void {
+        _configured = ServerConfig.isSet();
+        _problem = null;
+        touch();
+        _api.pollSoon();
+        WatchUi.requestUpdate();
+    }
+
     // Input or a return to the foreground starts the full pace for a while.
     private function touch() as Void {
         _activeUntil = System.getTimer() + Pacing.ACTIVE_WINDOW_MS;
@@ -67,7 +77,7 @@ class Controller {
 
     // What the screen shows.
     function status() as Number {
-        return Status.of(_api.phoneConnected(), _problem, state);
+        return Status.of(_configured, _api.phoneConnected(), _problem, state);
     }
 
     // The view reports each draw, which paces the redraws while playing.
