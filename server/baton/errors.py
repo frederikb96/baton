@@ -10,6 +10,8 @@ SPOTIFY_RATE_LIMITED = "spotify_rate_limited"
 SPOTIFY_ERROR = "spotify_error"
 BAD_REQUEST = "bad_request"
 TRACK_CHANGED = "track_changed"
+NO_PLAYING_PLAYLIST = "no_playing_playlist"
+PLAYLIST_NOT_EDITABLE = "playlist_not_editable"
 
 
 class ProviderError(Exception):

@@ -19,11 +19,22 @@ module MenuFlow {
         return (Application.getApp() as BatonApp).controller as Controller;
     }
 
-    // Remove-like is the focused item, so holding Up and pressing Start removes the like.
+    function offLabel(playlist as String) as String {
+        return fit("Off " + playlist, LABEL_CHARS);
+    }
+
+    // Remove-like is the focused item, so holding Up and pressing Start removes the like. The
+    // playing playlist has an entry of its own unless it is the target playlist.
     function openRoot() as Void {
+        var state = controller().state;
+        var target = state == null ? null : state.playlistName;
+        var playing = state == null ? null : state.playingPlaylistName;
         var menu = new WatchUi.Menu2({:title => "Baton"});
         menu.addItem(new WatchUi.MenuItem("Remove like", null, :unlike, null));
-        menu.addItem(new WatchUi.MenuItem("Off playlist", null, :remove, null));
+        if (playing != null && !playing.equals(target)) {
+            menu.addItem(new WatchUi.MenuItem(offLabel(playing), null, :removePlaying, null));
+        }
+        menu.addItem(new WatchUi.MenuItem(target == null ? "Off playlist" : offLabel(target), null, :remove, null));
         menu.addItem(new WatchUi.MenuItem("Playlists", null, :playlists, null));
         WatchUi.pushView(menu, new RootMenuDelegate(), WatchUi.SLIDE_UP);
     }
@@ -45,6 +56,8 @@ class RootMenuDelegate extends WatchUi.Menu2InputDelegate {
         var id = item.getId();
         if (id == :unlike) {
             MenuFlow.finish(Command.unlike(MenuFlow.controller().trackId()));
+        } else if (id == :removePlaying) {
+            MenuFlow.finish(Command.playingPlaylistRemove(MenuFlow.controller().trackId()));
         } else if (id == :remove) {
             MenuFlow.finish(Command.playlistRemove(MenuFlow.controller().trackId()));
         } else if (id == :playlists) {

@@ -13,7 +13,7 @@ from typing import Any, TypeVar
 
 from baton import errors
 from baton.db import Store
-from baton.providers.base import Device, Playback, Provider, RecentContext
+from baton.providers.base import Device, Playback, Playlist, Provider, RecentContext
 
 OK = "ok"
 ALREADY = "already"
@@ -62,6 +62,8 @@ class State:
     device_name: str | None
     server_time_ms: int
     track_id: str | None = None
+    playing_playlist_name: str | None = None
+    in_playing_playlist: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -75,12 +77,14 @@ class KnownState:
 
 @dataclass(frozen=True)
 class TrackFlags:
-    """Whether a track is liked and on the target playlist, looked up once per track."""
+    """Whether a track is liked and on the two playlists, looked up once per track."""
 
     track_id: str
     target_id: str | None
+    playing_id: str | None
     liked: bool | None
     in_playlist: bool | None
+    in_playing: bool | None
 
 
 @dataclass(frozen=True)
@@ -196,6 +200,7 @@ class Controller:
         self._started: dict[str, float] = {}
         self._names: dict[str, str] = {}
         self._unavailable: dict[str, float] = {}
+        self._editable: dict[str, tuple[float, Playlist | None]] = {}
         self._state_ttl = state_cache_seconds
         self._known: KnownState | None = None
         self._flags: TrackFlags | None = None
@@ -217,28 +222,61 @@ class Controller:
             log.exception("unexpected answer from Spotify")
             return None
 
+    async def _playing_playlist(self, pb: Playback) -> Playlist | None:
+        """The playlist playback runs from if this login may change it, remembered for an hour."""
+        if pb.playlist_id is None:
+            return None
+        known = self._editable.get(pb.playlist_id)
+        if known and self._now() - known[0] < UNAVAILABLE_SECONDS:
+            return known[1]
+        playlist = await self._provider.editable_playlist(pb.playlist_id)
+        self._editable[pb.playlist_id] = (self._now(), playlist)
+        return playlist
+
     async def _state(
         self,
         pb: Playback | None,
         *,
         liked: bool | None = None,
-        in_playlist: bool | None = None,
+        membership: tuple[str, bool] | None = None,
     ) -> State:
+        """``membership`` is a playlist id and what a command just learned about the track in it."""
         target = self._store.get_settings().target_playlist
         track = pb.track if pb else None
-        if track is not None:
+        playing = None
+        in_playlist = in_playing = None
+        if pb is not None and track is not None:
+            playing = await self._soft(self._playing_playlist(pb))
             flags = self._flags
             target_id = target.id if target else None
-            if flags and flags.track_id == track.id and flags.target_id == target_id:
+            playing_id = playing.id if playing else None
+            if membership is not None:
+                in_playlist = membership[1] if membership[0] == target_id else None
+                in_playing = membership[1] if membership[0] == playing_id else None
+            if (
+                flags
+                and flags.track_id == track.id
+                and flags.target_id == target_id
+                and flags.playing_id == playing_id
+            ):
                 liked = flags.liked if liked is None else liked
                 in_playlist = flags.in_playlist if in_playlist is None else in_playlist
+                in_playing = flags.in_playing if in_playing is None else in_playing
             if liked is None:
                 liked = await self._soft(self._provider.is_liked(track.uri))
             if target is not None and in_playlist is None:
                 in_playlist = await self._soft(
                     self._provider.playlist_contains(target.id, track.uri)
                 )
-            self._flags = TrackFlags(track.id, target_id, liked, in_playlist)
+            if playing is not None and in_playing is None:
+                in_playing = (
+                    in_playlist
+                    if playing_id == target_id
+                    else await self._soft(self._provider.playlist_contains(playing.id, track.uri))
+                )
+            self._flags = TrackFlags(
+                track.id, target_id, playing_id, liked, in_playlist, in_playing
+            )
         return State(
             is_playing=bool(pb and pb.is_playing),
             title=pb.title if pb else None,
@@ -251,6 +289,8 @@ class Controller:
             device_name=pb.device.name if pb and pb.device else None,
             server_time_ms=int(self._now() * 1000),
             track_id=track.id if track else None,
+            playing_playlist_name=playing.name if playing else None,
+            in_playing_playlist=in_playing,
         )
 
     async def _fresh(self) -> State:
@@ -442,14 +482,56 @@ class Controller:
             return failure(
                 errors.NO_TARGET_PLAYLIST, "No target playlist is set.", await self._state(pb)
             )
-        member = await self._provider.playlist_contains(target.id, pb.track.uri)
-        if member == want:
-            return Reply(ALREADY, state=await self._state(pb, in_playlist=member))
+        changed = await self._set_member(pb.track.uri, target.id, want)
+        return Reply(
+            OK if changed else ALREADY, state=await self._state(pb, membership=(target.id, want))
+        )
+
+    async def _set_member(self, uri: str, playlist_id: str, want: bool) -> bool:
+        """Bring the track into or out of the playlist; False when it was so already."""
+        if await self._provider.playlist_contains(playlist_id, uri) == want:
+            return False
         if want:
-            await self._provider.playlist_add(target.id, pb.track.uri)
+            await self._provider.playlist_add(playlist_id, uri)
         else:
-            await self._provider.playlist_remove(target.id, pb.track.uri)
-        return Reply(OK, state=await self._state(pb, in_playlist=want))
+            await self._provider.playlist_remove(playlist_id, uri)
+        return True
+
+    async def playing_playlist_add(self, track_id: str | None = None) -> Reply:
+        """Add the current track to the playlist it is playing from if it is not in it."""
+        return await self._playing_member(want=True, track_id=track_id)
+
+    async def playing_playlist_remove(self, track_id: str | None = None) -> Reply:
+        """Remove the current track from the playlist it is playing from if it is in it."""
+        return await self._playing_member(want=False, track_id=track_id)
+
+    @serialized
+    @guarded
+    async def _playing_member(self, *, want: bool, track_id: str | None) -> Reply:
+        pb, problem = await self._current_track(track_id)
+        if problem or pb is None or pb.track is None:
+            return problem or failure(errors.NO_TRACK, "Nothing likable is playing.")
+        if pb.playlist_id is None:
+            return failure(
+                errors.NO_PLAYING_PLAYLIST, "No playlist is playing.", await self._state(pb)
+            )
+        playlist = await self._playing_playlist(pb)
+        if playlist is None:
+            return failure(
+                errors.PLAYLIST_NOT_EDITABLE,
+                "Only the owner can change this playlist.",
+                await self._state(pb),
+            )
+        changed = await self._set_member(pb.track.uri, playlist.id, want)
+        if want:
+            message = f"Added to {playlist.name}" if changed else f"Already in {playlist.name}"
+        else:
+            message = f"Removed from {playlist.name}" if changed else f"Not in {playlist.name}"
+        return Reply(
+            OK if changed else ALREADY,
+            message=message,
+            state=await self._state(pb, membership=(playlist.id, want)),
+        )
 
     # recent playlists
 

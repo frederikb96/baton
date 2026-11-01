@@ -10,6 +10,7 @@ module Gesture {
         PREVIOUS_TRACK,
         LIKE,
         PLAYLIST_ADD,
+        PLAYING_PLAYLIST_ADD,
         MENU,
         EXIT
     }
@@ -21,7 +22,8 @@ module Gesture {
 //
 //   Start      short                      play/pause
 //   Down       short / double / triple    next / start of the track / previous track
-//   Up         short / double / hold      like / add to playlist / menu
+//   Up         short / double / triple    like / add to target playlist / add to playing playlist
+//   Up         hold                       menu
 //   Back       short                      exit
 //
 // Up and Down have a multi-press window, so a press that can still grow into a longer gesture is
@@ -32,6 +34,8 @@ class GestureClassifier {
     const SHORT_MAX_MS = 600;
     // Time after a release in which another press continues the gesture.
     const DOUBLE_WINDOW_MS = 380;
+    // The longest multi-press: it needs no window and acts at once.
+    const MAX_TAPS = 3;
 
     private var _downAt as Dictionary<Number, Number> = {};
     // key -> time at which the taps so far become their gesture
@@ -72,10 +76,9 @@ class GestureClassifier {
             _out.add(Gesture.EXIT);
         } else if (key == WatchUi.KEY_UP || key == WatchUi.KEY_DOWN) {
             var taps = _pendingUntil.hasKey(key) ? (_tapCount[key] as Number) + 1 : 1;
-            var last = key == WatchUi.KEY_UP ? 2 : 3;
-            if (taps == last) {
+            if (taps == MAX_TAPS) {
                 forget(key);
-                _out.add(key == WatchUi.KEY_UP ? Gesture.PLAYLIST_ADD : Gesture.PREVIOUS_TRACK);
+                _out.add(key == WatchUi.KEY_UP ? Gesture.PLAYING_PLAYLIST_ADD : Gesture.PREVIOUS_TRACK);
             } else {
                 _tapCount[key] = taps;
                 _pendingUntil[key] = now + DOUBLE_WINDOW_MS;
@@ -135,7 +138,7 @@ class GestureClassifier {
                 var taps = _tapCount[key] as Number;
                 forget(key);
                 if (key == WatchUi.KEY_UP) {
-                    _out.add(Gesture.LIKE);
+                    _out.add(taps == 1 ? Gesture.LIKE : Gesture.PLAYLIST_ADD);
                 } else {
                     _out.add(taps == 1 ? Gesture.NEXT : Gesture.RESTART);
                 }

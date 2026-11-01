@@ -29,6 +29,8 @@ class FakePlaylist:
     name: str
     items: list[str] = field(default_factory=list)
     snapshot: int = 1
+    owner: str = "alex"
+    collaborative: bool = False
 
     def touch(self) -> None:
         """Bump the snapshot id after a change."""
@@ -242,6 +244,7 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
                 "device": {**device, "is_active": True},
                 "is_playing": fake.is_playing,
                 "progress_ms": fake.progress_ms,
+                "context": {"uri": fake.context} if fake.context else None,
                 "shuffle_state": fake.shuffle,
                 "item": item,
                 "currently_playing_type": "episode" if fake.episode_playing else "track",
@@ -405,7 +408,14 @@ def create_fake_spotify(fake: FakeSpotify) -> FastAPI:
         found = find(playlist_id)
         if found is None:
             return JSONResponse({"error": {"status": 404, "message": "Not found"}}, 404)
-        return JSONResponse({"name": found.name, "snapshot_id": f"snap-{found.snapshot}"})
+        return JSONResponse(
+            {
+                "name": found.name,
+                "snapshot_id": f"snap-{found.snapshot}",
+                "owner": {"id": found.owner},
+                "collaborative": found.collaborative,
+            }
+        )
 
     def item_of(stored: str) -> dict[str, Any]:
         """A playlist item as Spotify shows it with a market: relinked tracks name the original."""

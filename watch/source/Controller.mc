@@ -165,6 +165,8 @@ class Controller {
             send(Command.like(trackId()));
         } else if (gesture == Gesture.PLAYLIST_ADD) {
             send(Command.playlistAdd(trackId()));
+        } else if (gesture == Gesture.PLAYING_PLAYLIST_ADD) {
+            send(Command.playingPlaylistAdd(trackId()));
         } else if (gesture == Gesture.MENU) {
             openMenu();
         } else if (gesture == Gesture.EXIT) {

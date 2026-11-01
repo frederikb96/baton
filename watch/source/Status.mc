@@ -128,6 +128,10 @@ module Status {
         var error = outcome.code;
         if ("no_target_playlist".equals(error)) {
             return "No target playlist";
+        } else if ("no_playing_playlist".equals(error)) {
+            return "No playlist playing";
+        } else if ("playlist_not_editable".equals(error)) {
+            return "Not your playlist";
         } else if ("track_changed".equals(error)) {
             return "Song changed";
         } else if ("spotify_rate_limited".equals(error)) {

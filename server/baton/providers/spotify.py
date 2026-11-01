@@ -284,6 +284,7 @@ class SpotifyProvider(Provider):
             playable = item.get("type") == "track" and not item.get("is_local") and item.get("uri")
             if playable:
                 track = Track(item["uri"], title or "", artist, duration)
+        context = PLAYLIST_CONTEXT.match(str((data.get("context") or {}).get("uri") or ""))
         return Playback(
             is_playing=bool(data.get("is_playing")),
             device=device,
@@ -292,6 +293,7 @@ class SpotifyProvider(Provider):
             artist=artist,
             progress_ms=data.get("progress_ms"),
             duration_ms=duration,
+            playlist_id=context[1] if context else None,
         )
 
     async def devices(self) -> list[Device]:
@@ -400,6 +402,25 @@ class SpotifyProvider(Provider):
         """Look up a playlist by id."""
         _, name = await self._snapshot(playlist_id)
         return Playlist(playlist_id, name)
+
+    async def editable_playlist(self, playlist_id: str) -> Playlist | None:
+        """The playlist if this login owns it or it is collaborative.
+
+        Spotify answers 403 or 404 for the playlists it withholds from development-mode apps.
+        """
+        resp = await self._request(
+            "GET",
+            f"/playlists/{playlist_id}",
+            params={"fields": "name,collaborative,owner(id)"},
+            ok=(200, 403, 404),
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        owner = (data.get("owner") or {}).get("id")
+        if not data.get("collaborative") and owner != await self._own_id():
+            return None
+        return Playlist(playlist_id, str(data.get("name") or ""))
 
     async def my_playlists(self) -> list[Playlist]:
         """The user's own and followed playlists."""

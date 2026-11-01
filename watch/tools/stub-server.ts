@@ -28,6 +28,7 @@ let progress = 0
 let anchor = 0
 const liked = new Set<number>()
 const inPlaylist = new Set<number>()
+const inPlaying = new Set<number>()
 
 function reset(name: string) {
   scenario = name
@@ -37,6 +38,7 @@ function reset(name: string) {
   anchor = Date.now()
   liked.clear()
   inPlaylist.clear()
+  inPlaying.clear()
 }
 reset(scenario)
 
@@ -69,6 +71,8 @@ function state() {
     liked: liked.has(index),
     in_playlist: inPlaylist.has(index),
     playlist_name: 'My Shazam',
+    playing_playlist_name: 'Cycling',
+    in_playing_playlist: inPlaying.has(index),
     device_name: 'Stub phone',
     server_time_ms: Date.now(),
   }
@@ -115,6 +119,10 @@ function handle(method: string, path: string, mode: string | null, track: string
       return set(true, inPlaylist, true)
     case 'POST /api/watch/playlist/remove':
       return set(true, inPlaylist, false)
+    case 'POST /api/watch/playing-playlist/add':
+      return set(true, inPlaying, true)
+    case 'POST /api/watch/playing-playlist/remove':
+      return set(true, inPlaying, false)
     case 'GET /api/watch/playlists':
       return reply('ok', { playlists })
   }

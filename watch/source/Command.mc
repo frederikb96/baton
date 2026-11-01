@@ -66,6 +66,14 @@ module Command {
         return confirmed(post(anchored("playlist/remove", trackId), "Removing...", "Removed", "Not in playlist"));
     }
 
+    function playingPlaylistAdd(trackId as String?) as Request {
+        return confirmed(post(anchored("playing-playlist/add", trackId), "Adding...", "", ""));
+    }
+
+    function playingPlaylistRemove(trackId as String?) as Request {
+        return confirmed(post(anchored("playing-playlist/remove", trackId), "Removing...", "", ""));
+    }
+
     function playlists() as Request {
         return new Request(BASE + "playlists", Communications.HTTP_REQUEST_METHOD_GET, false, "", "", "");
     }

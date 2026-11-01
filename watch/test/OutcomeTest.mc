@@ -17,6 +17,8 @@ function okBody() as Dictionary {
             "in_playlist" => false,
             "playlist_name" => "My Shazam",
             "track_id" => "4uLU6hMCjMI75M1A2tKUQC",
+            "playing_playlist_name" => "Cycling",
+            "in_playing_playlist" => true,
             "device_name" => "Phone",
             "server_time_ms" => 1793299258493l
         }
@@ -30,6 +32,7 @@ function okAnswerCarriesTheState(logger as Logger) as Boolean {
     return o.kind == Result.OK && s != null && s.isPlaying && "Intro".equals(s.title)
         && "The xx".equals(s.artist) && s.progressMs == 1200 && s.durationMs == 127000
         && s.liked == true && s.inPlaylist == false && "My Shazam".equals(s.playlistName)
+        && "Cycling".equals(s.playingPlaylistName) && s.inPlayingPlaylist == true
         && "The xx - Intro".equals(s.headline()) && "4uLU6hMCjMI75M1A2tKUQC".equals(s.trackId);
 }
 

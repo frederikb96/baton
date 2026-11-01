@@ -163,6 +163,11 @@ class MainView extends WatchUi.View {
         var liked = state != null && state.liked == true && (status == Status.PLAYING || status == Status.PAUSED);
         Glyphs.heart(dc, up[0], up[1] - size * 3 / 4, size, liked ? RED : DARK_GRAY);
         Glyphs.dots(dc, up[0], up[1] + size * 3 / 2, size * 2 / 3, GRAY);
+        var inPlaying = state == null ? null : state.inPlayingPlaylist;
+        if (inPlaying != null && (status == Status.PLAYING || status == Status.PAUSED)) {
+            var check = polar(w, h, 157, radius);
+            Glyphs.check(dc, check[0], check[1], size * 3 / 4, inPlaying ? GREEN : DARK_GRAY);
+        }
     }
 
     private function drawTime(dc as Graphics.Dc, w as Number, h as Number) as Void {

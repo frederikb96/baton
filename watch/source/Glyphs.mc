@@ -35,6 +35,13 @@ module Glyphs {
         }
     }
 
+    function check(dc as Graphics.Dc, x as Number, y as Number, s as Number, color as Number) as Void {
+        dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(3);
+        dc.drawLine(x - s, y, x - s / 4, y + s * 3 / 4);
+        dc.drawLine(x - s / 4, y + s * 3 / 4, x + s, y - s * 3 / 4);
+    }
+
     // A list with a plus: the playlist the Up button adds to.
     function playlist(dc as Graphics.Dc, x as Number, y as Number, s as Number, color as Number) as Void {
         dc.setColor(color, Graphics.COLOR_TRANSPARENT);

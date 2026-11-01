@@ -24,7 +24,7 @@ STATE_KEYS = {
     "server_time_ms",
 }
 # Added after the first release; clients written against the original state object ignore it.
-STATE_ADDITIONS = {"track_id"}
+STATE_ADDITIONS = {"track_id", "playing_playlist_name", "in_playing_playlist"}
 T0, T1, T2 = "spotify:track:t0", "spotify:track:t1", "spotify:track:t2"
 
 
@@ -67,6 +67,99 @@ async def test_state_without_active_device_is_ok_and_empty(rig: Rig) -> None:
     assert body["result"] == "ok"
     assert body["state"]["is_playing"] is False and body["state"]["title"] is None
     assert body["state"]["liked"] is None and body["state"]["in_playlist"] is None
+
+
+# playing playlist -----------------------------------------------------------------------
+
+CYCLING = "pl20000000000000000000"
+
+
+def plays_from(rig: Rig, playlist_id: str, suffix: str = "") -> None:
+    rig.fake.context = f"spotify:playlist:{playlist_id}{suffix}"
+
+
+async def test_state_reports_the_playing_playlist(rig: Rig) -> None:
+    plays_from(rig, CYCLING, "?sessionId=1&mode=enhanced")
+    state = (await call(rig, "GET", "state"))["state"]
+    assert state["playing_playlist_name"] == "Cycling" and state["in_playing_playlist"] is True
+    current_track(rig, T2)
+    state = (await call(rig, "GET", "state"))["state"]
+    assert state["playing_playlist_name"] == "Cycling" and state["in_playing_playlist"] is False
+
+
+async def test_state_without_playing_playlist(rig: Rig) -> None:
+    rig.fake.context = "spotify:album:a1"
+    state = (await call(rig, "GET", "state"))["state"]
+    assert state["playing_playlist_name"] is None and state["in_playing_playlist"] is None
+
+
+async def test_playing_playlist_add_then_remove(rig: Rig) -> None:
+    plays_from(rig, CYCLING)
+    current_track(rig, T2)
+    added = await call(rig, "POST", "playing-playlist/add")
+    assert added["result"] == "ok" and added["message"] == "Added to Cycling"
+    assert added["state"]["in_playing_playlist"] is True
+    assert rig.fake.playlists[CYCLING].items.count(T2) == 1
+    again = await call(rig, "POST", "playing-playlist/add")
+    assert again["result"] == "already" and again["message"] == "Already in Cycling"
+    assert rig.fake.playlists[CYCLING].items.count(T2) == 1
+    removed = await call(rig, "POST", "playing-playlist/remove")
+    assert removed["result"] == "ok" and removed["message"] == "Removed from Cycling"
+    assert removed["state"]["in_playing_playlist"] is False
+    assert T2 not in rig.fake.playlists[CYCLING].items
+    gone = await call(rig, "POST", "playing-playlist/remove")
+    assert gone["result"] == "already" and gone["message"] == "Not in Cycling"
+
+
+async def test_playing_playlist_add_with_no_playlist_changes_nothing(rig: Rig) -> None:
+    body = await call(rig, "POST", "playing-playlist/add")
+    assert body["result"] == "error" and body["error"] == "no_playing_playlist"
+    assert body["state"]["title"] is not None
+
+
+@pytest.mark.parametrize("readable", [True, False])
+async def test_playing_playlist_of_someone_else_is_refused(rig: Rig, readable: bool) -> None:
+    rig.fake.playlists[CYCLING].owner = "someone-else"
+    if not readable:
+        rig.fake.fail(f"GET /v1/playlists/{CYCLING}", 404, times=1)
+    plays_from(rig, CYCLING)
+    current_track(rig, T2)
+    state = (await call(rig, "GET", "state"))["state"]
+    assert state["playing_playlist_name"] is None and state["in_playing_playlist"] is None
+    body = await call(rig, "POST", "playing-playlist/add")
+    assert body["error"] == "playlist_not_editable"
+    assert not rig.fake.calls_to("POST", f"/v1/playlists/{CYCLING}/items")
+
+
+async def test_collaborative_playlist_of_someone_else_is_editable(rig: Rig) -> None:
+    rig.fake.playlists[CYCLING].owner = "someone-else"
+    rig.fake.playlists[CYCLING].collaborative = True
+    plays_from(rig, CYCLING)
+    current_track(rig, T2)
+    assert (await call(rig, "POST", "playing-playlist/add"))["result"] == "ok"
+
+
+async def test_playing_playlist_add_is_refused_when_the_song_changed(rig: Rig) -> None:
+    plays_from(rig, CYCLING)
+    current_track(rig, T2)
+    body = await call(rig, "POST", "playing-playlist/add?track=t1")
+    assert body["error"] == "track_changed"
+    assert T2 not in rig.fake.playlists[CYCLING].items
+
+
+async def test_target_add_shows_when_the_target_is_playing(rig: Rig) -> None:
+    plays_from(rig, "pl10000000000000000000")
+    current_track(rig, T0)
+    await call(rig, "GET", "state")
+    body = await call(rig, "POST", "playlist/add")
+    assert body["state"]["in_playlist"] is True and body["state"]["in_playing_playlist"] is True
+
+
+async def test_membership_of_the_playing_playlist_is_looked_up_once_per_track(rig: Rig) -> None:
+    plays_from(rig, CYCLING)
+    await call(rig, "GET", "state")
+    await call(rig, "GET", "state")
+    assert len(rig.fake.calls_to("GET", f"/v1/playlists/{CYCLING}/items")) == 1
 
 
 # play / pause / next / previous ---------------------------------------------------------
@@ -587,7 +680,7 @@ async def test_every_watch_route_requires_the_key(rig: Rig) -> None:
     from baton import routes_watch
 
     routes = [(r.path, m) for r in routes_watch.router.routes for m in r.methods]  # type: ignore[attr-defined]
-    assert len(routes) == 12
+    assert len(routes) == 14
     for path, method in routes:
         resp = await rig.client.request(
             method, path.replace("{playlist_id}", "pl10000000000000000000")

@@ -12,6 +12,9 @@ class PlayerState {
     var inPlaylist as Boolean? = null;
     var playlistName as String? = null;
     var trackId as String? = null;
+    // the playlist the track plays from, when it can be changed; null hides everything about it
+    var playingPlaylistName as String? = null;
+    var inPlayingPlaylist as Boolean? = null;
 
     function initialize(d as Dictionary) {
         isPlaying = flag(d["is_playing"] as Object?) == true;
@@ -23,6 +26,8 @@ class PlayerState {
         inPlaylist = flag((d["in_playlist"] as Object?));
         playlistName = text((d["playlist_name"] as Object?));
         trackId = text((d["track_id"] as Object?));
+        playingPlaylistName = text((d["playing_playlist_name"] as Object?));
+        inPlayingPlaylist = flag((d["in_playing_playlist"] as Object?));
     }
 
     // "Artist - Title", or whichever half is known

@@ -228,6 +228,8 @@ def test_watch_routes_expose_only_the_contract() -> None:
             "POST /api/watch/unlike",
             "POST /api/watch/playlist/add",
             "POST /api/watch/playlist/remove",
+            "POST /api/watch/playing-playlist/add",
+            "POST /api/watch/playing-playlist/remove",
             "POST /api/watch/playlists/{playlist_id}/play",
         ]
     )

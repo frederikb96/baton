@@ -42,7 +42,7 @@ The watch app talks to the server through the phone. This is the whole contract;
 
 Spotify publishes no numbers: it counts calls in a rolling 30 seconds and, for development-mode apps, against a quota shared by the developer account. The server keeps a margin from both.
 
-- `GET /state` costs one Spotify call. Whether the track is liked and on the target playlist is looked up once per track and updated by the server's own commands, so a change made in another app shows with the next track.
+- `GET /state` costs one Spotify call. Whether the track is liked and on the target and playing playlists is looked up once per track and updated by the server's own commands, so a change made in another app shows with the next track. Whether a playing playlist can be changed is remembered for an hour.
 - A state read answers later requests for `BATON_STATE_CACHE_SECONDS`, with `progress_ms` carried forward. A track that has run out is read again at once, and a command's answer replaces the known state.
 - Past `BATON_SPOTIFY_BUDGET_30S` or `BATON_SPOTIFY_BUDGET_HOUR` calls, `GET /state` answers the known state until the count has dropped. Commands are never held back by the budget.
 - When Spotify answers 429, nothing is sent for the `Retry-After` it names, or for 60 seconds without one (15 minutes for `QUOTA_EXCEEDED`). Meanwhile `GET /state` answers the known state, or `spotify_rate_limited` if there is none. A pause of up to 15 seconds is waited out, so a press answers late instead of failing; during a longer one commands answer `spotify_rate_limited`.
@@ -67,6 +67,8 @@ These extend the contract; clients written against the text above keep working u
 - `state.track_id`: `str | null`, the Spotify id of the playing track, `null` when nothing likable is playing. Clients that do not know the field ignore it.
 - Optional query parameter `track` on `POST /api/watch/like`, `unlike`, `playlist/add` and `playlist/remove`: the `track_id` of the last state the client showed. If a different track is playing now, nothing is changed and the answer is `{"result": "error", "error": "track_changed", ...}` with the fresh `state`, so the client can show the new track and let the user press again. Without the parameter the commands act on whatever is playing, as before.
 - Error code `track_changed`, only ever answered for an anchored request. A client that does not send `track` never sees it.
+- `state.playing_playlist_name`: `str | null`, the playlist the track plays from when the login owns it or it is collaborative. `state.in_playing_playlist`: `bool | null`, whether the track is in that playlist. Both are `null` for any other context, including Spotify's own mixes. A smart shuffle session counts as its playlist.
+- `POST /api/watch/playing-playlist/add` / `POST /api/watch/playing-playlist/remove`, optionally with `track`: the same check before the write as `playlist/add`, for the playing playlist. `message` names the outcome (`Added to <name>`, `Already in <name>`, `Removed from <name>`, `Not in <name>`). Error codes `no_playing_playlist` (playback does not run from a playlist) and `playlist_not_editable` (it does, but this login may not change it); both change nothing and carry the state.
 
 ## Spotify relay
 

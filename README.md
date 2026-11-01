@@ -30,6 +30,7 @@ Garmin watches already control the music on your phone, and for play, pause and 
 
 - **Like and playlist add that never toggle.** A press that finds the song already liked answers `already` with its own vibration instead of un-liking it. You can mash the button on a bumpy road and the result is always the one you meant. Removing a like is a separate menu entry.
 - **A target playlist.** Double press adds the song to one playlist you picked, for example the one you collect songs to check out later in. Songs already in it are not added twice.
+- **Keep what smart shuffle finds.** Triple press adds the song to the playlist that is playing, and a check mark on the screen shows whether it is already in there.
 - **Start a playlist.** The menu lists Liked Songs and the ten playlists you used last (playlists you saved by link count from the moment you add them), and starts one normally, shuffled or with smart shuffle (plain shuffle where Spotify doesn't offer it).
 - **A web page for everything else.** The same server serves a small page for playback, the device, settings and watch keys.
 
@@ -80,7 +81,8 @@ Copy `bin/baton.prg` to `GARMIN/Apps` on the watch over USB. Build options, the 
 | Down | short / double / triple | next track / start of the track / previous track |
 | Up | short | add to Liked Songs |
 | Up | double | add to the target playlist |
-| Up | hold | menu: remove like, remove from playlist, start a playlist |
+| Up | triple | add to the playlist that is playing |
+| Up | hold | menu: remove like, remove from a playlist, start a playlist |
 | Back | short | exit |
 
 The vibration patterns, the screen and how the app is launched are described in [docs/watch.md](docs/watch.md).

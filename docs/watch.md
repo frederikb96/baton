@@ -6,7 +6,7 @@ Supported devices are the products in `watch/manifest.xml`: the fēnix 8 family,
 
 ## Controls
 
-Every press is safe to repeat: like and playlist add never toggle, and a command that finds nothing to do answers `already`.
+Every press is safe to repeat: like and both playlist adds never toggle, and a command that finds nothing to do answers `already`.
 
 | Button | Press | Action |
 |---|---|---|
@@ -16,18 +16,21 @@ Every press is safe to repeat: like and playlist add never toggle, and a command
 | Down | triple | previous track |
 | Up | short | add to Liked Songs |
 | Up | double | add to the target playlist |
+| Up | triple | add to the playlist that is playing |
 | Up | hold ~0.6 s | menu |
 | Back | short | exit the app |
 
-The menu opens on *Remove like*, so Up-hold then Start removes the like; the second entry (*Off playlist*) removes the track from the target playlist, the third (*Playlists*) lists Liked Songs and the ten playlists used last to start normally, shuffled or with smart shuffle (plain shuffle where Spotify has no smart shuffle). Choosing an entry returns to the main screen; an untouched menu closes after 8 seconds.
+The triple press helps with songs Spotify mixes into a playlist, as smart shuffle does. It works while the track plays from a playlist you own or that is collaborative; Spotify lets nobody else change one. If no playlist is playing or it is not yours, nothing changes and the watch answers with the error vibration ("No playlist playing", "Not your playlist").
 
-Like, add and remove carry the id of the track the screen showed; if another song plays by the time the server gets the request it refuses ("Song changed", error vibration) and the state is refreshed.
+The menu opens on *Remove like*, so Up-hold then Start removes the like. Below it, *Off* with a playlist's name removes the track from that playlist: first the playing playlist, if it is one you can change, then the target playlist. The last entry (*Playlists*) lists Liked Songs and the ten playlists used last to start normally, shuffled or with smart shuffle (plain shuffle where Spotify has no smart shuffle). Choosing an entry returns to the main screen; an untouched menu closes after 8 seconds.
 
-Actions fire on release of a press shorter than 0.6 s. Apart from the Up hold that opens the menu, longer presses, the touch screen and the watch's own hold shortcuts (voice control, music controls, recent apps) trigger nothing in the app. Up and Down wait 0.4 s for another press before acting, so a double press on Down acts 0.4 s after its last release and a triple press at once.
+Likes and playlist changes carry the id of the track the screen showed; if another song plays by the time the server gets the request it refuses ("Song changed", error vibration) and the state is refreshed.
+
+Actions fire on release of a press shorter than 0.6 s. Apart from the Up hold that opens the menu, longer presses, the touch screen and the watch's own hold shortcuts (voice control, music controls, recent apps) trigger nothing in the app. Up and Down wait 0.4 s for another press before acting, so a double press acts 0.4 s after its last release and a triple press at once.
 
 ## Vibration
 
-What you hear needs no confirmation: play/pause, next, previous, restart and starting a playlist vibrate only on an error. Like, playlist add and their removals vibrate either way, and the server's answer decides the pattern:
+What you hear needs no confirmation: play/pause, next, previous, restart and starting a playlist vibrate only on an error. Like, both playlist adds and their removals vibrate either way, and the server's answer decides the pattern:
 
 | Pattern | Meaning |
 |---|---|
@@ -38,7 +41,7 @@ What you hear needs no confirmation: play/pause, next, previous, restart and sta
 
 ## Screen
 
-Progress ring around the edge, title and artist in the middle, the time at the bottom, a hint glyph beside each button (pause/play at Start, skip at Down, heart and menu dots at Up; the heart is red for a liked track) and the target playlist, green when the track is in it. The last command's result shows for a moment in the same place. Standing problems replace the track: no phone, no connection to the server (with the error code and the address tried), device asleep (no active Spotify device), Spotify login expired, watch key rejected, nothing playing.
+Progress ring around the edge, title and artist in the middle, the time at the bottom, a hint glyph beside each button (pause/play at Start, skip at Down, heart and menu dots at Up; the heart is red for a liked track) and the target playlist, green when the track is in it. A check mark above the heart appears while a playlist you can change is playing, green when the track is in that playlist. The last command's result shows for a moment in the same place. Standing problems replace the track: no phone, no connection to the server (with the error code and the address tried), device asleep (no active Spotify device), Spotify login expired, watch key rejected, nothing playing.
 
 The app saves battery and Spotify calls by pacing itself. For 60 seconds after a button press or after the app comes to the foreground it runs at full pace: a poll every 20 seconds and the ring redrawn every second. Untouched, it settles to a slow pace: a poll every 5 minutes (it catches a change made on the phone, which therefore shows late; a track that has run out is polled at once, so the next song appears on time, and ever more rarely while the answer still shows it) and, while playing, a redraw every 5 seconds. Every command answer carries the fresh state and a poll follows a button press that wakes the app after a quiet spell. The ring advances locally between answers. At most one request is in flight. With no phone connected nothing is sent. The intervals are the constants in `source/Pacing.mc`.
 

@@ -21,11 +21,20 @@ ACTIONS = {
     "unlike": "unlike",
     "playlist/add": "playlist_add",
     "playlist/remove": "playlist_remove",
+    "playing-playlist/add": "playing_playlist_add",
+    "playing-playlist/remove": "playing_playlist_remove",
 }
 
 
 # Commands that act on the playing track and accept the id of the track the caller last saw.
-ANCHORED = {"like", "unlike", "playlist_add", "playlist_remove"}
+ANCHORED = {
+    "like",
+    "unlike",
+    "playlist_add",
+    "playlist_remove",
+    "playing_playlist_add",
+    "playing_playlist_remove",
+}
 
 
 def add_actions(target: APIRouter) -> None:

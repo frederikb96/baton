@@ -38,6 +38,7 @@ class Playback:
     """What is playing right now.
 
     ``track`` is None for episodes, ads and anything else that cannot be liked.
+    ``playlist_id`` names the playlist playback runs from, None for any other context.
     """
 
     is_playing: bool
@@ -47,6 +48,7 @@ class Playback:
     artist: str | None
     progress_ms: int | None
     duration_ms: int | None
+    playlist_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,10 @@ class Provider(ABC):
     @abstractmethod
     async def playlist(self, playlist_id: str) -> Playlist:
         """Look up a playlist by id."""
+
+    @abstractmethod
+    async def editable_playlist(self, playlist_id: str) -> Playlist | None:
+        """The playlist if this login may change it, None if it may not or cannot read it."""
 
     @abstractmethod
     async def my_playlists(self) -> list[Playlist]:

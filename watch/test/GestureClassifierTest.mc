@@ -110,14 +110,29 @@ function secondTapStartedInWindowCountsEvenIfReleasedLate(logger as Logger) as B
 }
 
 (:test)
-function upSingleAndDouble(logger as Logger) as Boolean {
+function upSingleDoubleAndTriple(logger as Logger) as Boolean {
     var single = new GestureClassifier();
     tap(single, WatchUi.KEY_UP, 1000, 80);
     var double = new GestureClassifier();
     var released = tap(double, WatchUi.KEY_UP, 1000, 80);
     released = tap(double, WatchUi.KEY_UP, released + 120, 80);
+    var triple = new GestureClassifier();
+    released = tap(triple, WatchUi.KEY_UP, 1000, 80);
+    released = tap(triple, WatchUi.KEY_UP, released + 120, 80);
+    released = tap(triple, WatchUi.KEY_UP, released + 120, 80);
+    var atOnce = triple.take(released);
     return sameGestures(drain(single, 5000), [Gesture.LIKE])
-        && sameGestures(drain(double, 5000), [Gesture.PLAYLIST_ADD]);
+        && sameGestures(drain(double, 5000), [Gesture.PLAYLIST_ADD])
+        && atOnce == Gesture.PLAYING_PLAYLIST_ADD;
+}
+
+(:test)
+function upDoubleWaitsForAThirdPress(logger as Logger) as Boolean {
+    var c = new GestureClassifier();
+    var released = tap(c, WatchUi.KEY_UP, 1000, 80);
+    released = tap(c, WatchUi.KEY_UP, released + 120, 80);
+    return c.take(released + c.DOUBLE_WINDOW_MS - 1) == null
+        && c.take(released + c.DOUBLE_WINDOW_MS) == Gesture.PLAYLIST_ADD;
 }
 
 (:test)
