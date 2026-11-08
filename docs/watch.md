@@ -56,7 +56,7 @@ The app needs the address of your server and a watch key, created in the server'
 
 ## Install
 
-The app is on its way to the Connect IQ Store. A store install gets its settings as described above.
+Install Baton from the [Connect IQ Store](https://apps.garmin.com/apps/d607254c-3e66-4c7e-be31-5318b42adf22), in the Connect IQ app on the phone. A store install gets its settings as described above.
 
 ## Build locally
 

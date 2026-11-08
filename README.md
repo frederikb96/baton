@@ -47,7 +47,7 @@ The watch app only talks to your own server, over HTTPS through the phone's Garm
 - A Garmin watch from the supported list in [docs/watch.md](docs/watch.md): fēnix 8 family, epix 2 Pro 47 mm, Forerunner 265 and 965.
 - A Spotify Premium account and **your own Spotify developer app**. Spotify limits apps of this kind to development mode, which means at most five Spotify accounts per app, each added by hand in the dashboard. One hosted instance can't serve many people, so everyone runs their own copy. [docs/server.md](docs/server.md) walks through the app setup.
 - A place to run one container, reachable under an HTTPS address. The server speaks plain HTTP, so a reverse proxy or tunnel in front is part of the install.
-- The watch app. It is on its way to the Connect IQ Store; until it is listed, or if you prefer it, build it yourself with the [Connect IQ SDK](https://developer.garmin.com/connect-iq/sdk/) and a developer key.
+- The watch app, from the [Connect IQ Store](https://apps.garmin.com/apps/d607254c-3e66-4c7e-be31-5318b42adf22), or built yourself with the [Connect IQ SDK](https://developer.garmin.com/connect-iq/sdk/) and a developer key.
 
 ## Run your own
 
@@ -61,7 +61,7 @@ docker compose up -d
 
 Open the public URL, sign in, press *Log in with Spotify*, create a watch key and keep it for the next step. Details, the full variable list and the two authentication modes are in [docs/server.md](docs/server.md).
 
-Watch, from the Connect IQ Store once it is listed: install Baton, then enter the server URL and the watch key in the app's settings in Garmin Connect.
+Watch, from the [Connect IQ Store](https://apps.garmin.com/apps/d607254c-3e66-4c7e-be31-5318b42adf22): install Baton, then enter the server URL and the watch key in the app's settings in Garmin Connect.
 
 Watch, built locally, with the URL and key baked into the app:
 
