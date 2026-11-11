@@ -14,8 +14,8 @@ A self-hosted Spotify remote for Garmin watches, built to be used without lookin
 </tr>
 </table>
 
-[![Server](https://github.com/frederikb96/baton/actions/workflows/server.yml/badge.svg)](https://github.com/frederikb96/baton/actions/workflows/server.yml)
-[![Watch](https://github.com/frederikb96/baton/actions/workflows/watch.yml/badge.svg)](https://github.com/frederikb96/baton/actions/workflows/watch.yml)
+[![Server](https://github.com/frederikberg/baton/actions/workflows/server.yml/badge.svg)](https://github.com/frederikberg/baton/actions/workflows/server.yml)
+[![Watch](https://github.com/frederikberg/baton/actions/workflows/watch.yml/badge.svg)](https://github.com/frederikberg/baton/actions/workflows/watch.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Gloves on, watch on the handlebar, phone in the pocket. One press likes the song, a double press puts it into a playlist, and the watch buzzes to tell you what happened. You never have to look at the screen.

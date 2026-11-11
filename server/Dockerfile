@@ -6,7 +6,7 @@ COPY baton ./baton
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install .
 
 FROM python:3.15-slim
-LABEL org.opencontainers.image.source="https://github.com/frederikb96/baton" \
+LABEL org.opencontainers.image.source="https://github.com/frederikberg/baton" \
       org.opencontainers.image.description="Self-hosted remote for Spotify: watch API, web page and Spotify login" \
       org.opencontainers.image.licenses="MIT"
 ENV PATH="/opt/venv/bin:$PATH" \

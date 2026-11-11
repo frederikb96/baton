@@ -4,7 +4,7 @@
 # the watch and Spotify's redirect URI need an HTTPS address.
 services:
   baton:
-    image: ghcr.io/frederikb96/baton:latest
+    image: ghcr.io/frederikberg/baton:latest
     restart: unless-stopped
     env_file: .env
     ports:
