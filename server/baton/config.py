@@ -43,6 +43,7 @@ class Config(BaseModel):
     throttle_max_failures: int
     throttle_window_seconds: int
     throttle_lockout_seconds: int
+    throttle_max_clients: int
     recent_playlists_cache_seconds: int
     state_cache_seconds: float
     spotify_budget_30s: int

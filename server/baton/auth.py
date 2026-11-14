@@ -43,14 +43,20 @@ class WatchAuthError(Exception):
 
 
 class Throttle:
-    """Per-client failed attempt counter with a lockout."""
+    """Per-client failed attempt counter with a lockout, bounded in the clients it remembers."""
 
     def __init__(
-        self, max_failures: int, window: float, lockout: float, now: Callable[[], float]
+        self,
+        max_failures: int,
+        window: float,
+        lockout: float,
+        max_clients: int,
+        now: Callable[[], float],
     ) -> None:
         self._max = max_failures
         self._window = window
         self._lockout = lockout
+        self._max_clients = max_clients
         self._now = now
         self._failures: dict[str, deque[float]] = defaultdict(deque)
         self._locked_until: dict[str, float] = {}
@@ -75,6 +81,34 @@ class Throttle:
             recent.popleft()
         if len(recent) >= self._max:
             self._locked_until[client] = now + self._lockout
+        if len(self._failures) > self._max_clients:
+            self._shrink(now)
+
+    def _shrink(self, now: float) -> None:
+        """Forget clients that are quiet and not locked; if too many remain, the oldest first,
+        locked ones last.
+
+        Runs only when the bound is exceeded and brings the table down to half of it, so the
+        cost is spread over many failures instead of paid on each one.
+        """
+        for client, recent in list(self._failures.items()):
+            if client in self._locked_until:
+                continue
+            if not recent or now - recent[-1] > self._window:
+                del self._failures[client]
+        for client, until in list(self._locked_until.items()):
+            if now >= until:
+                del self._locked_until[client]
+                self._failures.pop(client, None)
+        excess = len(self._failures) - self._max_clients // 2
+        if excess > 0:
+            oldest = sorted(
+                self._failures,
+                key=lambda c: (c in self._locked_until, self._failures[c][-1]),
+            )[:excess]
+            for client in oldest:
+                del self._failures[client]
+                self._locked_until.pop(client, None)
 
     def succeed(self, client: str) -> None:
         """Forget earlier failures."""

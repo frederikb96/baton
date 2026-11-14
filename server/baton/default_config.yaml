@@ -49,6 +49,9 @@ settle_delay_ms: 300
 throttle_max_failures: 10
 throttle_window_seconds: 300
 throttle_lockout_seconds: 300
+# Most clients each throttle tracks at once. Past this the entries of clients quiet for longer
+# than the window go first, then the oldest, so a flood of addresses cannot grow memory.
+throttle_max_clients: 10000
 
 # How long the recent playlists list is reused, in seconds.
 recent_playlists_cache_seconds: 300

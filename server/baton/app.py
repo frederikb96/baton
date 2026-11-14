@@ -67,6 +67,7 @@ def create_app(
             config.throttle_max_failures,
             config.throttle_window_seconds,
             config.throttle_lockout_seconds,
+            config.throttle_max_clients,
             now,
         )
 
