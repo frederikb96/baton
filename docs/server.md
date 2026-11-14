@@ -43,6 +43,7 @@ Bootstrap values only. Each is read from the environment variable `BATON_` plus 
 | `BATON_THROTTLE_MAX_FAILURES` | Failed attempts within the window that lock a client out of the web page login, and that start slowing down rejected watch keys. |
 | `BATON_THROTTLE_WINDOW_SECONDS` | Window in which failures are counted. |
 | `BATON_THROTTLE_LOCKOUT_SECONDS` | Length of a login lockout. |
+| `BATON_THROTTLE_MAX_CLIENTS` | Most clients a throttle remembers at once; past it, quiet clients are forgotten first, then the oldest. |
 | `BATON_RECENT_PLAYLISTS_CACHE_SECONDS` | How long Spotify's recently played playlists are reused for the playlist list. |
 | `BATON_STATE_CACHE_SECONDS` | How long a playback state read answers later requests without asking Spotify. |
 | `BATON_SPOTIFY_BUDGET_30S` | Spotify calls in a rolling 30 seconds at which state reads stop and the last known state is answered. |
